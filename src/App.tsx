@@ -37,7 +37,13 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  audioUrl?: string;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  lastUpdated: Date;
 }
 
 interface Lawyer {
@@ -93,24 +99,35 @@ const MOCK_LAWYERS: Lawyer[] = [
 ];
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('land_oracle_messages');
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    const saved = localStorage.getItem('land_oracle_sessions');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+        return parsed.map((s: any) => ({
+          ...s,
+          lastUpdated: new Date(s.lastUpdated),
+          messages: s.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+        }));
       } catch (e) {
         return [];
       }
     }
     return [];
   });
+  
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
+    const last = localStorage.getItem('land_oracle_last_session');
+    return last || null;
+  });
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [language, setLanguage] = useState<'en' | 'lg'>('en');
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'services'>('chat');
+  const [showHistory, setShowHistory] = useState(false);
   const [freeQuestionsRemaining, setFreeQuestionsRemaining] = useState(5);
   const [isPro, setIsPro] = useState(false);
   
@@ -118,20 +135,78 @@ export default function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+  const currentSession = sessions.find(s => s.id === currentSessionId);
+  const messages = currentSession?.messages || [];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
-    localStorage.setItem('land_oracle_messages', JSON.stringify(messages));
-    scrollToBottom();
-  }, [messages]);
+    localStorage.setItem('land_oracle_sessions', JSON.stringify(sessions));
+  }, [sessions]);
 
-  const clearHistory = () => {
+  useEffect(() => {
+    if (currentSessionId) {
+      localStorage.setItem('land_oracle_last_session', currentSessionId);
+    }
+    scrollToBottom();
+  }, [currentSessionId, messages]);
+
+  const createNewSession = () => {
+    const newSession: ChatSession = {
+      id: Date.now().toString(),
+      title: language === 'en' ? 'New Conversation' : 'Mboozi Mpya',
+      messages: [],
+      lastUpdated: new Date()
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setCurrentSessionId(newSession.id);
+    setShowHistory(false);
+  };
+
+  const deleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(language === 'en' ? 'Delete this conversation?' : 'Ggyamu mboozi eno?')) {
+      setSessions(prev => prev.filter(s => s.id !== id));
+      if (currentSessionId === id) {
+        setCurrentSessionId(null);
+      }
+    }
+  };
+
+  const clearAllHistory = () => {
     if (window.confirm(language === 'en' ? 'Clear all chat history?' : 'Ggyamu ebyafaayo byonna?')) {
-      setMessages([]);
-      localStorage.removeItem('land_oracle_messages');
+      setSessions([]);
+      setCurrentSessionId(null);
+      localStorage.removeItem('land_oracle_sessions');
+      localStorage.removeItem('land_oracle_last_session');
+    }
+  };
+
+  const updateSessionMessages = (newMessages: Message[]) => {
+    if (!currentSessionId) {
+      const newSession: ChatSession = {
+        id: Date.now().toString(),
+        title: newMessages[0]?.content.substring(0, 30) + '...',
+        messages: newMessages,
+        lastUpdated: new Date()
+      };
+      setSessions(prev => [newSession, ...prev]);
+      setCurrentSessionId(newSession.id);
+    } else {
+      setSessions(prev => prev.map(s => 
+        s.id === currentSessionId 
+          ? { 
+              ...s, 
+              messages: newMessages, 
+              lastUpdated: new Date(),
+              title: s.messages.length === 0 ? newMessages[0]?.content.substring(0, 30) + '...' : s.title
+            } 
+          : s
+      ));
     }
   };
 
@@ -173,6 +248,11 @@ export default function App() {
 
   const processAudioMessage = async (audioBlob: Blob) => {
     setIsLoading(true);
+    
+    // Mobile Audio Unlock: Resume context immediately on user click
+    if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
+
     const reader = new FileReader();
     reader.readAsDataURL(audioBlob);
     reader.onloadend = async () => {
@@ -183,7 +263,8 @@ export default function App() {
         content: language === 'en' ? "[Audio Message]" : "[Bubaka bwa ddoboozi]",
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, userMessage]);
+      const updatedMessages = [...messages, userMessage];
+      updateSessionMessages(updatedMessages);
 
       try {
         const response = await ai.models.generateContent({
@@ -198,12 +279,14 @@ export default function App() {
           content: response.text || "I apologize, I couldn't process that request.",
           timestamp: new Date(),
         };
-        setMessages(prev => [...prev, assistantMessage]);
+        const finalMessages = [...updatedMessages, assistantMessage];
+        updateSessionMessages(finalMessages);
         speakText(assistantMessage.content, assistantMessage.id);
         if (!isPro) setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
       } catch (error) {
         console.error("Voice Processing Error:", error);
-        setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', content: "Nfuna obuzibu mu kuwuliriza eddoboozi lyo.", timestamp: new Date() }]);
+        const errorMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: "Nfuna obuzibu mu kuwuliriza eddoboozi lyo.", timestamp: new Date() };
+        updateSessionMessages([...updatedMessages, errorMessage]);
       } finally {
         setIsLoading(false);
       }
@@ -214,14 +297,11 @@ export default function App() {
   const speakText = async (text: string, messageId: string) => {
     if (isSpeaking === messageId) { stopSpeaking(); return; }
     
-    // Ensure AudioContext is initialized/resumed
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (audioContextRef.current.state === 'suspended') {
-      await audioContextRef.current.resume();
-    }
+    // Ensure AudioContext is initialized/resumed (redundant but safe)
+    if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
 
+    stopSpeaking(); // Stop any current playback
     setIsSpeaking(messageId);
     try {
       const response = await ai.models.generateContent({
@@ -231,8 +311,12 @@ export default function App() {
       });
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (base64Audio) {
-        const audioData = atob(base64Audio);
-        const pcm16 = new Int16Array(new Uint8Array([...audioData].map(c => c.charCodeAt(0))).buffer);
+        const binaryString = atob(base64Audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const pcm16 = new Int16Array(bytes.buffer);
         const float32 = new Float32Array(pcm16.length);
         for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768;
 
@@ -243,15 +327,20 @@ export default function App() {
         source.buffer = audioBuffer;
         source.connect(audioContextRef.current!.destination);
         source.onended = () => setIsSpeaking(null);
+        currentSourceRef.current = source;
         source.start(0);
       }
     } catch (error) { console.error("TTS Error:", error); setIsSpeaking(null); }
   };
 
   const stopSpeaking = () => {
-    if (audioContextRef.current) {
-      audioContextRef.current.close().then(() => { audioContextRef.current = null; setIsSpeaking(null); });
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop();
+      } catch (e) {}
+      currentSourceRef.current = null;
     }
+    setIsSpeaking(null);
   };
 
   useEffect(() => {
@@ -260,22 +349,37 @@ export default function App() {
     }
   }, []);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleQuickQuestion = (text: string) => {
+    // Mobile Audio Unlock: Resume context immediately on user click
+    if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
+    
+    handleSend(text);
+  };
+
+  const handleSend = async (textOverride?: string) => {
+    const messageText = textOverride || input;
+    if (!messageText.trim() || isLoading) return;
     if (!isPro && freeQuestionsRemaining <= 0) return;
 
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: input, timestamp: new Date() };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
+    // Mobile Audio Unlock: Resume context immediately on user click
+    if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
+
+    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: messageText, timestamp: new Date() };
+    const updatedMessages = [...messages, userMessage];
+    updateSessionMessages(updatedMessages);
+    
+    if (!textOverride) setInput('');
     setIsLoading(true);
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: [{ role: 'user', parts: [{ text: input }] }],
+        contents: [{ role: 'user', parts: [{ text: messageText }] }],
         config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.7 },
       });
       const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
-      setMessages(prev => [...prev, assistantMessage]);
+      updateSessionMessages([...updatedMessages, assistantMessage]);
       speakText(assistantMessage.content, assistantMessage.id);
       if (!isPro) setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
     } catch (error: any) {
@@ -286,7 +390,8 @@ export default function App() {
       } else if (error?.message?.includes("quota")) {
         errorMessage = "Okozesezza nnyo Oracle leero. Gezaako enkya.";
       }
-      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() }]);
+      const assistantError: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() };
+      updateSessionMessages([...updatedMessages, assistantError]);
     } finally { setIsLoading(false); }
   };
 
@@ -329,9 +434,9 @@ export default function App() {
             </button>
           </div>
           <button 
-            onClick={clearHistory}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-medium text-slate-500"
-            title={language === 'en' ? 'Clear History' : 'Ggyamu ebyafaayo'}
+            onClick={() => setShowHistory(!showHistory)}
+            className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-sm font-medium", showHistory ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
+            title={language === 'en' ? 'Chat History' : 'Ebyafaayo'}
           >
             <History size={16} />
           </button>
@@ -345,7 +450,71 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="pt-20 pb-32 max-w-4xl mx-auto px-4">
+      <main className="pt-20 pb-32 max-w-4xl mx-auto px-4 relative">
+        {/* History Sidebar/Overlay */}
+        <AnimatePresence>
+          {showHistory && (
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="fixed inset-y-0 left-0 w-full md:w-80 bg-white shadow-2xl z-[60] border-r border-slate-200 p-6 pt-20 overflow-y-auto"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-xl">{language === 'en' ? 'Chat History' : 'Ebyafaayo'}</h3>
+                <button onClick={() => setShowHistory(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
+              </div>
+
+              <button 
+                onClick={createNewSession}
+                className="w-full py-3 px-4 bg-amber-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 mb-6 shadow-lg shadow-amber-100 hover:bg-amber-700 transition-all"
+              >
+                <MessageSquare size={18} />
+                {language === 'en' ? 'New Chat' : 'Mboozi Mpya'}
+              </button>
+
+              <div className="space-y-2">
+                {sessions.map(session => (
+                  <div 
+                    key={session.id}
+                    onClick={() => { setCurrentSessionId(session.id); setShowHistory(false); }}
+                    className={cn(
+                      "p-4 rounded-2xl cursor-pointer transition-all group border",
+                      currentSessionId === session.id ? "bg-amber-50 border-amber-200" : "bg-white border-transparent hover:bg-slate-50"
+                    )}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 min-w-0">
+                        <p className={cn("font-semibold truncate", currentSessionId === session.id ? "text-amber-900" : "text-slate-700")}>
+                          {session.title}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          {session.lastUpdated.toLocaleDateString()} • {session.messages.length} {language === 'en' ? 'messages' : 'bubaka'}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={(e) => deleteSession(session.id, e)}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-all"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {sessions.length > 0 && (
+                <button 
+                  onClick={clearAllHistory}
+                  className="w-full mt-8 py-2 text-xs text-slate-400 hover:text-red-500 transition-colors font-medium"
+                >
+                  {language === 'en' ? 'Clear All History' : 'Ggyamu byonna'}
+                </button>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {activeTab === 'chat' ? (
           <>
             {messages.length === 0 ? (
@@ -361,7 +530,7 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {quickQuestions.map((q, i) => (
-                    <motion.button key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} onClick={() => setInput(language === 'en' ? q.en : q.lg)} className="p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-50 transition-all group">
+                    <motion.button key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} onClick={() => handleQuickQuestion(language === 'en' ? q.en : q.lg)} className="p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-50 transition-all group">
                       <div className="flex justify-between items-start mb-2">
                         <div className="p-2 bg-amber-50 rounded-lg text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors">
                           {i === 0 && <Map size={20} />}
@@ -529,7 +698,7 @@ export default function App() {
                   {isRecording && <motion.div initial={{ scale: 0 }} animate={{ scale: 2 }} className="absolute inset-0 bg-red-400/20 rounded-full" />}
                 </button>
                 <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={language === 'en' ? "Ask about land rights..." : "Buuza ku tteeka..."} className="flex-1 bg-transparent border-none focus:ring-0 px-4 py-3 text-slate-800" />
-                <button onClick={handleSend} disabled={!input.trim() || isLoading} className="w-12 h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"><Send size={20} /></button>
+                <button onClick={() => handleSend()} disabled={!input.trim() || isLoading} className="w-12 h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"><Send size={20} /></button>
               </div>
             )}
             
