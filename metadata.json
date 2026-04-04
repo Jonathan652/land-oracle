@@ -1,0 +1,5 @@
+{
+  "name": "Luganda Land Oracle",
+  "description": "A vernacular AI legal assistant for the Uganda Land Act, providing accurate guidance in Luganda and English.",
+  "requestFramePermissions": ["microphone"]
+}
