@@ -126,6 +126,7 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [language, setLanguage] = useState<'en' | 'lg'>('en');
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
+  const [isAudioLoading, setIsAudioLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'services'>('chat');
   const [showHistory, setShowHistory] = useState(false);
   const [freeQuestionsRemaining, setFreeQuestionsRemaining] = useState(5);
@@ -297,40 +298,77 @@ export default function App() {
   const speakText = async (text: string, messageId: string) => {
     if (isSpeaking === messageId) { stopSpeaking(); return; }
     
-    // Ensure AudioContext is initialized/resumed (redundant but safe)
-    if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
+    // Ensure AudioContext is initialized/resumed
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    
+    if (audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
 
     stopSpeaking(); // Stop any current playback
-    setIsSpeaking(messageId);
+    setIsAudioLoading(messageId);
+    
     try {
-      const response = await ai.models.generateContent({
+      // Create a fresh instance to ensure the latest API key is used
+      const ttsAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      
+      const response = await ttsAi.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `Say this clearly: ${text}` }] }],
-        config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } },
+        config: { 
+          responseModalities: ["AUDIO" as any], 
+          speechConfig: { 
+            voiceConfig: { 
+              prebuiltVoiceConfig: { voiceName: 'Kore' } 
+            } 
+          } 
+        },
       });
+
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (base64Audio) {
         const binaryString = atob(base64Audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
           bytes[i] = binaryString.charCodeAt(i);
         }
-        const pcm16 = new Int16Array(bytes.buffer);
-        const float32 = new Float32Array(pcm16.length);
-        for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768;
+
+        // Use DataView for safe 16-bit reading (Gemini TTS is Little Endian PCM16)
+        const dataView = new DataView(bytes.buffer);
+        const numSamples = Math.floor(len / 2);
+        const float32 = new Float32Array(numSamples);
+        
+        for (let i = 0; i < numSamples; i++) {
+          float32[i] = dataView.getInt16(i * 2, true) / 32768;
+        }
 
         const audioBuffer = audioContextRef.current!.createBuffer(1, float32.length, 24000);
         audioBuffer.getChannelData(0).set(float32);
         
-        const source = audioContextRef.current!.createBufferSource();
+        if (!audioContextRef.current) return;
+        const source = audioContextRef.current.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(audioContextRef.current!.destination);
-        source.onended = () => setIsSpeaking(null);
+        source.connect(audioContextRef.current.destination);
+        source.onended = () => {
+          if (isSpeaking === messageId) setIsSpeaking(null);
+        };
         currentSourceRef.current = source;
+        setIsSpeaking(messageId);
         source.start(0);
+      } else {
+        throw new Error("No audio data received from Oracle.");
       }
-    } catch (error) { console.error("TTS Error:", error); setIsSpeaking(null); }
+    } catch (error: any) { 
+      console.error("TTS Error:", error);
+      alert(language === 'en' 
+        ? `Oracle Voice Error: ${error.message || 'Unknown error'}. Please check your internet or API key.` 
+        : `Obuzibu mu ddoboozi: ${error.message || 'Obuzibu obutamanyiddwa'}. Kebera yintaneeti oba API key yo.`);
+    } finally {
+      setIsAudioLoading(null);
+    }
   };
 
   const stopSpeaking = () => {
@@ -346,8 +384,19 @@ export default function App() {
   useEffect(() => {
     if (!process.env.GEMINI_API_KEY) {
       console.error("CRITICAL: GEMINI_API_KEY is missing from environment variables.");
+      const warningMessage: Message = {
+        id: 'api-warning',
+        role: 'assistant',
+        content: language === 'en' 
+          ? "⚠️ **Developer Note:** The Gemini API Key is missing. If you have deployed this to Vercel, please add `GEMINI_API_KEY` to your Environment Variables in the Vercel Dashboard."
+          : "⚠️ **Okulabula:** Gemini API Key ebula. Oba ogikozesezza ku Vercel, yongeramu `GEMINI_API_KEY` mu Environment Variables ku Vercel Dashboard.",
+        timestamp: new Date()
+      };
+      if (messages.length === 0) {
+        updateSessionMessages([warningMessage]);
+      }
     }
-  }, []);
+  }, [language]);
 
   const handleQuickQuestion = (text: string) => {
     // Mobile Audio Unlock: Resume context immediately on user click
@@ -559,8 +608,16 @@ export default function App() {
                       
                       {m.role === 'assistant' && (
                         <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
-                          <button onClick={() => speakText(m.content, m.id)} className={cn("p-2 rounded-xl transition-all", isSpeaking === m.id ? "bg-amber-100 text-amber-600" : "bg-slate-50 text-slate-400 hover:text-amber-600")}>
-                            {isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                          <button 
+                            onClick={() => speakText(m.content, m.id)} 
+                            disabled={isAudioLoading === m.id}
+                            className={cn(
+                              "p-2 rounded-xl transition-all flex items-center justify-center", 
+                              isSpeaking === m.id ? "bg-amber-100 text-amber-600" : "bg-slate-50 text-slate-400 hover:text-amber-600",
+                              isAudioLoading === m.id && "animate-pulse"
+                            )}
+                          >
+                            {isAudioLoading === m.id ? <Loader2 size={18} className="animate-spin" /> : (isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />)}
                           </button>
                           <button 
                             onClick={() => alert(language === 'en' ? 'Premium Report generation requires a small fee (UGX 5,000 via Mobile Money).' : 'Okufuna lipoota eno kyetagisa okusasula (UGX 5,000 okuyita mu Mobile Money).')}
