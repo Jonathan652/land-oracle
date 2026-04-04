@@ -37,6 +37,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  audioBuffer?: AudioBuffer; // Cache the processed audio
 }
 
 interface ChatSession {
@@ -127,6 +128,7 @@ export default function App() {
   const [language, setLanguage] = useState<'en' | 'lg'>('en');
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const [isAudioLoading, setIsAudioLoading] = useState<string | null>(null);
+  const [audioCache, setAudioCache] = useState<Record<string, AudioBuffer>>({});
   const [activeTab, setActiveTab] = useState<'chat' | 'services'>('chat');
   const [showHistory, setShowHistory] = useState(false);
   const [freeQuestionsRemaining, setFreeQuestionsRemaining] = useState(5);
@@ -308,10 +310,16 @@ export default function App() {
     }
 
     stopSpeaking(); // Stop any current playback
+
+    // 1. Check Cache First
+    if (audioCache[messageId]) {
+      playFromBuffer(audioCache[messageId], messageId);
+      return;
+    }
+
     setIsAudioLoading(messageId);
     
     try {
-      // Create a fresh instance to ensure the latest API key is used
       const ttsAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       
       const response = await ttsAi.models.generateContent({
@@ -336,7 +344,6 @@ export default function App() {
           bytes[i] = binaryString.charCodeAt(i);
         }
 
-        // Use DataView for safe 16-bit reading (Gemini TTS is Little Endian PCM16)
         const dataView = new DataView(bytes.buffer);
         const numSamples = Math.floor(len / 2);
         const float32 = new Float32Array(numSamples);
@@ -348,27 +355,43 @@ export default function App() {
         const audioBuffer = audioContextRef.current!.createBuffer(1, float32.length, 24000);
         audioBuffer.getChannelData(0).set(float32);
         
-        if (!audioContextRef.current) return;
-        const source = audioContextRef.current.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContextRef.current.destination);
-        source.onended = () => {
-          if (isSpeaking === messageId) setIsSpeaking(null);
-        };
-        currentSourceRef.current = source;
-        setIsSpeaking(messageId);
-        source.start(0);
+        // Save to cache
+        setAudioCache(prev => ({ ...prev, [messageId]: audioBuffer }));
+        
+        playFromBuffer(audioBuffer, messageId);
       } else {
-        throw new Error("No audio data received from Oracle.");
+        throw new Error("No audio data received.");
       }
     } catch (error: any) { 
       console.error("TTS Error:", error);
-      alert(language === 'en' 
-        ? `Oracle Voice Error: ${error.message || 'Unknown error'}. Please check your internet or API key.` 
-        : `Obuzibu mu ddoboozi: ${error.message || 'Obuzibu obutamanyiddwa'}. Kebera yintaneeti oba API key yo.`);
+      
+      // Friendly Quota Error
+      if (error?.message?.includes("429") || error?.message?.includes("quota")) {
+        alert(language === 'en' 
+          ? "📢 You've reached your daily limit (10) for voice messages. Please try again tomorrow or upgrade your plan." 
+          : "📢 Okozesezza nnyo eddoboozi lya Oracle leero (10). Gezaako enkya oba kyusaamu mu nteekateeka yo.");
+      } else {
+        alert(language === 'en' 
+          ? `Oracle Voice Error: ${error.message || 'Unknown error'}` 
+          : `Obuzibu mu ddoboozi: ${error.message || 'Obuzibu obutamanyiddwa'}`);
+      }
     } finally {
       setIsAudioLoading(null);
     }
+  };
+
+  const playFromBuffer = (buffer: AudioBuffer, messageId: string) => {
+    if (!audioContextRef.current) return;
+    
+    const source = audioContextRef.current.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContextRef.current.destination);
+    source.onended = () => {
+      if (isSpeaking === messageId) setIsSpeaking(null);
+    };
+    currentSourceRef.current = source;
+    setIsSpeaking(messageId);
+    source.start(0);
   };
 
   const stopSpeaking = () => {
