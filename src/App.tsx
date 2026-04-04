@@ -93,7 +93,18 @@ const MOCK_LAWYERS: Lawyer[] = [
 ];
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem('land_oracle_messages');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -113,8 +124,16 @@ export default function App() {
   };
 
   useEffect(() => {
+    localStorage.setItem('land_oracle_messages', JSON.stringify(messages));
     scrollToBottom();
   }, [messages]);
+
+  const clearHistory = () => {
+    if (window.confirm(language === 'en' ? 'Clear all chat history?' : 'Ggyamu ebyafaayo byonna?')) {
+      setMessages([]);
+      localStorage.removeItem('land_oracle_messages');
+    }
+  };
 
   // --- Recording Logic ---
   const startRecording = async () => {
@@ -194,6 +213,15 @@ export default function App() {
   // --- TTS Logic ---
   const speakText = async (text: string, messageId: string) => {
     if (isSpeaking === messageId) { stopSpeaking(); return; }
+    
+    // Ensure AudioContext is initialized/resumed
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
+
     setIsSpeaking(messageId);
     try {
       const response = await ai.models.generateContent({
@@ -208,15 +236,12 @@ export default function App() {
         const float32 = new Float32Array(pcm16.length);
         for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768;
 
-        if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
-
-        const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 24000);
+        const audioBuffer = audioContextRef.current!.createBuffer(1, float32.length, 24000);
         audioBuffer.getChannelData(0).set(float32);
         
-        const source = audioContextRef.current.createBufferSource();
+        const source = audioContextRef.current!.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(audioContextRef.current.destination);
+        source.connect(audioContextRef.current!.destination);
         source.onended = () => setIsSpeaking(null);
         source.start(0);
       }
@@ -303,6 +328,13 @@ export default function App() {
               {language === 'en' ? 'Services' : 'Emirimu'}
             </button>
           </div>
+          <button 
+            onClick={clearHistory}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-medium text-slate-500"
+            title={language === 'en' ? 'Clear History' : 'Ggyamu ebyafaayo'}
+          >
+            <History size={16} />
+          </button>
           <button 
             onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
             className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-medium"
