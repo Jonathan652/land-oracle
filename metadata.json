@@ -1,5 +1,5 @@
 {
-  "name": "Luganda Land Oracle",
-  "description": "A premier legal expert on the Uganda Land Act and other Ugandan laws, providing bilingual guidance and premium legal reports.",
+  "name": "Uganda Law Oracle",
+  "description": "A premier legal expert on the Constitution of Uganda, the Land Act, and all related legislation, providing bilingual guidance and premium legal reports.",
   "requestFramePermissions": ["microphone"]
 }

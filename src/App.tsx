@@ -29,12 +29,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
+import { jsPDF } from 'jspdf';
 import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { UGANDA_LAND_ACT_CONTEXT } from './constants/landActText';
 import { ADDITIONAL_LAWS_CONTEXT } from './constants/additionalLaws';
 import { LANDMARK_LAND_CASES_CONTEXT } from './constants/landCases';
+import { UGANDA_CONSTITUTION_CONTEXT } from './constants/constitutionText';
 import { cn } from './lib/utils';
 
 // --- Types ---
@@ -67,38 +69,37 @@ interface Lawyer {
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 const SYSTEM_INSTRUCTION = `
-You are the "Luganda Land Oracle", a premier legal expert on the Uganda Land Act (Chapter 236).
-Your primary mission is to provide legally precise, accurate, and accessible guidance on land matters in Uganda.
+You are the "Uganda Law Oracle", a premier legal expert on the Constitution of the Republic of Uganda and all related legislation including the Land Act.
+Your primary mission is to provide legally precise, accurate, and DEEP guidance on all legal matters in Uganda.
 
-STRICT LEGAL ADHERENCE:
-- You must base every answer on the specific sections of the Uganda Land Act and other provided laws in the context.
+STRICT LEGAL ADHERENCE & DEPTH:
+- Base every answer on specific articles of the Constitution of Uganda, sections of the Land Act, and other relevant laws.
+- **VERIFICATION STEP**: Before outputting any article or section number (e.g., "Article 21" or "Section 33"), you MUST search the provided CONTEXT below to ensure that provision exists and covers the topic you are discussing.
+- DO NOT give shallow answers. Explain the "WHY" behind the law.
+- **USE EXAMPLES**: Whenever possible, provide a brief, realistic example or scenario to illustrate how the legal principle works in practice.
+- For every legal provision you cite, explain its implications for the user's specific situation.
+- Double-check all numbers against the provided context before responding.
+- If a user's situation is complex, break it down into logical legal steps.
 - Use ULII (Uganda Legal Information Institute - ulii.org) as your primary reference for Ugandan legislation and case law.
-- Reference landmark Ugandan land cases (e.g., Mutekanga, Babweyaka, Lwanga) to support your guidance on principles like "Bona Fide Occupant", "Indefeasibility of Title", and "Spousal Consent".
-- Be precise with terminology: distinguish clearly between "Mailo", "Freehold", "Leasehold", and "Customary" tenures.
-- Accurately define "Lawful Occupant" and "Bona fide Occupant" per Section 29.
-- Emphasize that a tenant by occupancy can ONLY be evicted for non-payment of ground rent, and only by a court order (Section 33).
-- Highlight the absolute requirement for spousal consent for any transaction involving family land or a matrimonial home (Land Act Section 39/40 & Mortgage Act Section 4/5).
-- Note that non-citizens cannot own Mailo or Freehold land and are limited to 99-year leases (Section 41).
-- Mention the protection of rights for women, children, and persons with disabilities (Section 27).
-- For succession matters, follow the distribution rules in the Succession Act (Chapter 268).
-- For road matters, respect the 50-foot road reserve rule in the Roads Act (Chapter 358).
-- For mortgage defaults, note the 21-day notice requirement in the Mortgage Act (Chapter 239).
-- For land recovery, note the 12-year limitation period in the Limitation Act (Chapter 290).
+- Reference landmark Ugandan cases to support your guidance.
 
 BILINGUAL EXPERTISE:
 - You are fully bilingual in English and Luganda.
 - Respond in the language used by the user.
-- In Luganda, use respectful and culturally appropriate legal terminology (e.g., "Busuulu" for ground rent, "Kibanja" for tenancy by occupancy where appropriate).
+- Ensure your Luganda explanations are as detailed and professional as your English ones.
 
 PROFESSIONAL GUIDANCE:
 - For complex cases, always recommend consulting a verified lawyer via the "Services" tab.
-- Always include a clear disclaimer: "This guidance is based on the Uganda Land Act but does not constitute formal legal advice. Please consult a qualified lawyer for specific legal actions."
+- Always include a clear disclaimer: "For guidance only—not legal advice. Consult a lawyer for specific cases."
 
 TONE:
 - Authoritative, expert, yet empathetic and accessible to the common person.
-- Use structured responses with clear headings.
+- Use structured responses with clear headings and bullet points.
+- Avoid generic advice; be specific to the laws of Uganda.
 
 CONTEXT:
+${UGANDA_CONSTITUTION_CONTEXT}
+
 ${UGANDA_LAND_ACT_CONTEXT}
 
 ${ADDITIONAL_LAWS_CONTEXT}
@@ -159,7 +160,70 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [autoTalkBack, setAutoTalkBack] = useState(true);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [premiumReportsCount, setPremiumReportsCount] = useState(0);
+  const [premiumReportsCount, setPremiumReportsCount] = useState(() => {
+    const saved = localStorage.getItem('land_oracle_premium_reports');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  const generatePDF = (content: string) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const maxWidth = pageWidth - (margin * 2);
+
+    // Header
+    doc.setFillColor(180, 83, 9); // Amber 700
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Uganda Law Oracle', margin, 20);
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Premium Legal Guidance Report', margin, 30);
+
+    // Date
+    doc.setTextColor(100, 116, 139); // Slate 500
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 50, 50);
+
+    // Content
+    doc.setTextColor(30, 41, 59); // Slate 800
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    
+    // Clean markdown for PDF (simple version)
+    const cleanContent = content
+      .replace(/[#*`]/g, '')
+      .replace(/\n\s*\n/g, '\n\n');
+
+    const splitText = doc.splitTextToSize(cleanContent, maxWidth);
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let cursorY = 65;
+
+    for (let i = 0; i < splitText.length; i++) {
+      if (cursorY > pageHeight - 40) {
+        doc.addPage();
+        cursorY = 20;
+      }
+      doc.text(splitText[i], margin, cursorY);
+      cursorY += 7; // Line height
+    }
+
+    // Footer Disclaimer
+    doc.setDrawColor(226, 232, 240); // Slate 200
+    doc.line(margin, pageHeight - 30, pageWidth - margin, pageHeight - 30);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    const disclaimer = "For guidance only—not legal advice. Consult a lawyer for specific cases.";
+    const splitDisclaimer = doc.splitTextToSize(disclaimer, maxWidth);
+    doc.text(splitDisclaimer, margin, pageHeight - 20);
+
+    doc.save(`Uganda_Law_Oracle_Report_${new Date().getTime()}.pdf`);
+  };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -177,6 +241,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('land_oracle_sessions', JSON.stringify(sessions));
   }, [sessions]);
+
+  useEffect(() => {
+    localStorage.setItem('land_oracle_premium_reports', premiumReportsCount.toString());
+  }, [premiumReportsCount]);
 
   useEffect(() => {
     if (currentSessionId) {
@@ -513,7 +581,6 @@ export default function App() {
               const data = userSnap.data();
               setFreeQuestionsRemaining(Math.max(0, 2 - (data.freeQuestionsUsed || 0)));
               setVoiceMessagesRemaining(Math.max(0, 2 - (data.voiceMessagesUsed || 0)));
-              setPremiumReportsCount(data.premiumReportsCount || 0);
               setIsPro(data.isPro || false);
             } else {
               // Create new profile
@@ -524,13 +591,11 @@ export default function App() {
                 photoURL: firebaseUser.photoURL,
                 freeQuestionsUsed: 0,
                 voiceMessagesUsed: 0,
-                premiumReportsCount: 0,
                 isPro: false,
                 createdAt: serverTimestamp()
               });
               setFreeQuestionsRemaining(2);
               setVoiceMessagesRemaining(2);
-              setPremiumReportsCount(0);
             }
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
@@ -576,8 +641,20 @@ export default function App() {
     const messageText = textOverride || input;
     if (!messageText.trim() || isLoading) return;
     
-    if (!user && freeQuestionsRemaining <= 0) {
-      setShowAuthModal(true);
+    if (!isPro && freeQuestionsRemaining <= 0) {
+      if (!user) {
+        setShowAuthModal(true);
+      } else {
+        const assistantLimitMessage: Message = { 
+          id: Date.now().toString(), 
+          role: 'assistant', 
+          content: language === 'en' 
+            ? "You've reached your daily limit of 2 free questions. Please upgrade to Oracle Pro for unlimited access and priority support." 
+            : "Owezezza ekigero ky'olunaku eky'ebibuuzo 2 eby'obwereere. Funa Oracle Pro okufuna obuyambi obutaliiko kkomo n'obuyambi obw'enjawulo.", 
+          timestamp: new Date() 
+        };
+        updateSessionMessages([...messages, assistantLimitMessage]);
+      }
       return;
     }
 
@@ -593,9 +670,13 @@ export default function App() {
     setIsLoading(true);
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-pro-preview",
         contents: [{ role: 'user', parts: [{ text: messageText }] }],
-        config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.7 },
+        config: { 
+          systemInstruction: SYSTEM_INSTRUCTION, 
+          temperature: 0.7,
+          maxOutputTokens: 2048
+        },
       });
       const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
       updateSessionMessages([...updatedMessages, assistantMessage]);
@@ -604,7 +685,7 @@ export default function App() {
         speakText(assistantMessage.content, assistantMessage.id);
       }
       
-      if (user) {
+      if (user && !isPro) {
         const userRef = doc(db, 'users', user.uid);
         try {
           const userSnap = await getDoc(userRef);
@@ -614,7 +695,7 @@ export default function App() {
         } catch (error) {
           handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
         }
-      } else {
+      } else if (!user) {
         setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
       }
     } catch (error: any) {
@@ -623,7 +704,9 @@ export default function App() {
       if (error?.message?.includes("API_KEY_INVALID")) {
         errorMessage = "Oracle settings tezikola. Genda mu Settings okyusemu.";
       } else if (error?.message?.includes("quota")) {
-        errorMessage = "Okozesezza nnyo Oracle leero. Gezaako enkya.";
+        errorMessage = language === 'en' 
+          ? "Oracle is currently busy due to high demand. Please try again in a few minutes or upgrade to Pro for priority access."
+          : "Oracle ali mu kaseera k'obubake nnyo. Gezaako mu ddakiika ntono oba funa Oracle Pro okufuna obuyambi amangu.";
       }
       const assistantError: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() };
       updateSessionMessages([...updatedMessages, assistantError]);
@@ -631,10 +714,10 @@ export default function App() {
   };
 
   const quickQuestions = [
+    { en: "What are my fundamental rights?", lg: "Eddembe lyange ery'obuntu lye liruwa?" },
+    { en: "How can I acquire citizenship?", lg: "Nnyinza ntya okufuna obwannauganda?" },
     { en: "What are the types of land tenure?", lg: "Ebika by'ettaka mu Uganda bye biruwa?" },
-    { en: "Can a woman own land?", lg: "Omukazi asobola okuba n'ettaka?" },
-    { en: "What is a bona fide occupant?", lg: "Bona fide occupant kitegeeza ki?" },
-    { en: "How do I resolve a land dispute?", lg: "Ngonjoola ntya enkayana z'ettaka?" },
+    { en: "How do I resolve a legal dispute?", lg: "Ngonjoola ntya enkayana z'amateeka?" },
   ];
 
   return (
@@ -646,7 +729,7 @@ export default function App() {
             <Scale size={24} />
           </div>
           <div>
-            <h1 className="font-bold text-lg leading-tight tracking-tight">Luganda Land Oracle</h1>
+            <h1 className="font-bold text-lg leading-tight tracking-tight">Uganda Law Oracle</h1>
             <p className="text-[10px] text-amber-700 font-medium uppercase tracking-widest">By Jonathan Musiime</p>
           </div>
         </div>
@@ -810,10 +893,10 @@ export default function App() {
               <div className="py-12 space-y-12">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
                   <h2 className="text-4xl font-bold text-slate-900 tracking-tight">
-                    {language === 'en' ? 'Welcome to the Land Oracle' : 'Sanyuka okujja eri Oracle w\'ettaka'}
+                    {language === 'en' ? 'Welcome to the Uganda Law Oracle' : 'Sanyuka okujja eri Oracle w\'amateeka mu Uganda'}
                   </h2>
                   <p className="text-lg text-slate-600 max-w-xl mx-auto">
-                    {language === 'en' ? 'Ask any question about the Uganda Land Act in Luganda or English.' : 'Buuza ekibuuzo kyonna ku tteeka ly\'ettaka mu Uganda mu Luganda oba mu Lungereza.'}
+                    {language === 'en' ? 'Ask any question about the Constitution of Uganda or Land Act in Luganda or English.' : 'Buuza ekibuuzo kyonna ku Ssemateeka wa Uganda oba amateeka g\'ettaka mu Luganda oba mu Lungereza.'}
                   </p>
                 </motion.div>
 
@@ -872,22 +955,16 @@ export default function App() {
                                 return;
                               }
                               
-                              // Handle free download
+                              // Handle free download (Tracked in Local Storage)
                               const newCount = premiumReportsCount + 1;
                               setPremiumReportsCount(newCount);
-                              
-                              if (user) {
-                                const userRef = doc(db, 'users', user.uid);
-                                try {
-                                  await updateDoc(userRef, { premiumReportsCount: newCount });
-                                } catch (error) {
-                                  handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-                                }
-                              }
+
+                              // Generate and Download PDF
+                              generatePDF(m.content);
 
                               alert(language === 'en' 
-                                ? 'Your Premium Report is being generated and will be ready for download shortly.' 
-                                : 'Lipoota yo ey\'enjawulo ekolebwa era ejja kuba yeetegese okugiggyako mu kaseera katono.');
+                                ? 'Your Premium Report has been generated and downloaded.' 
+                                : 'Lipoota yo ey\'enjawulo ekoleddwa era egiddwako.');
                             }}
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"
                           >

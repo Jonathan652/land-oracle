@@ -13,6 +13,8 @@ service cloud.firestore {
     //   - displayName: string (optional)
     //   - photoURL: string (optional)
     //   - freeQuestionsUsed: number (required)
+    //   - voiceMessagesUsed: number (required)
+    //   - premiumReportsCount: number (required)
     //   - isPro: boolean (required)
     //   - createdAt: timestamp (required, immutable)
     //
@@ -56,11 +58,13 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'freeQuestionsUsed', 'isPro', 'createdAt']) &&
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'freeQuestionsUsed', 'voiceMessagesUsed', 'premiumReportsCount', 'isPro', 'createdAt']) &&
              data.uid == request.auth.uid &&
              isValidEmail(data.email) &&
-             data.freeQuestionsUsed is number &&
-             data.isPro is bool;
+             (data.freeQuestionsUsed == null || data.freeQuestionsUsed is number) &&
+             (data.voiceMessagesUsed == null || data.voiceMessagesUsed is number) &&
+             (data.premiumReportsCount == null || data.premiumReportsCount is number) &&
+             (data.isPro == null || data.isPro is bool);
     }
 
     function isValidSession(data) {

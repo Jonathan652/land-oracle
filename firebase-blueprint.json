@@ -10,6 +10,8 @@
         "displayName": { "type": "string", "description": "The user's display name." },
         "photoURL": { "type": "string", "format": "uri", "description": "The user's profile photo URL." },
         "freeQuestionsUsed": { "type": "integer", "description": "Number of free questions used by this user." },
+        "voiceMessagesUsed": { "type": "integer", "description": "Number of voice messages used by this user." },
+        "premiumReportsCount": { "type": "integer", "description": "Number of premium reports downloaded by this user." },
         "isPro": { "type": "boolean", "description": "Whether the user has a pro account." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." }
       },
