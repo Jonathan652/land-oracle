@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
-import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { UGANDA_LAND_ACT_CONTEXT } from './constants/landActText';
@@ -138,6 +138,11 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [isEmailVerifying, setIsEmailVerifying] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -428,10 +433,31 @@ export default function App() {
     setIsSpeaking(null);
   };
 
+  const checkVerification = async () => {
+    if (auth.currentUser) {
+      await auth.currentUser.reload();
+      const updatedUser = auth.currentUser;
+      setUser(updatedUser);
+      if (updatedUser.emailVerified) {
+        setIsEmailVerifying(false);
+        setVerificationSent(false);
+      }
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
+        
+        // Check for email verification
+        const isEmailAuth = firebaseUser.providerData.some(p => p.providerId === 'password');
+        if (isEmailAuth && !firebaseUser.emailVerified) {
+          setIsEmailVerifying(true);
+        } else {
+          setIsEmailVerifying(false);
+        }
+
         // Sync with Firestore
         const userRef = doc(db, 'users', firebaseUser.uid);
         try {
@@ -930,68 +956,217 @@ export default function App() {
                 <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
                   <ShieldCheck size={32} />
                 </div>
-                <h2 className="text-2xl font-bold mb-2">
-                  {language === 'en' ? 'Sign in to continue' : 'Yingira okusobola okweyongerayo'}
-                </h2>
-                <p className="text-slate-500 mb-6">
-                  {language === 'en' 
-                    ? 'You have used your 2 free questions. Sign in to get unlimited access to the Oracle.' 
-                    : 'Okozesezza ebibuuzo byo 2 eby’obwereere. Yingira okusobola okukozesa Oracle mu ngeri etaliiko kkomo.'}
-                </p>
-
-                {authError && (
-                  <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm flex items-start gap-3 text-left">
-                    <Info size={18} className="shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold mb-1">{language === 'en' ? 'Sign-in Failed' : 'Okuyingira kugaanyi'}</p>
-                      <p className="opacity-90">{authError}</p>
+                
+                {isEmailVerifying ? (
+                  <div className="text-center">
+                    <h2 className="text-2xl font-bold mb-2">
+                      {language === 'en' ? 'Verify your email' : 'Kakasa Email yo'}
+                    </h2>
+                    <p className="text-slate-500 mb-6">
+                      {language === 'en' 
+                        ? `We've sent a verification link to ${auth.currentUser?.email}. Please check your inbox and click the link to continue.` 
+                        : `Tusindidde akalango k'okukakasa ku ${auth.currentUser?.email}. Genda mu email yo okakase.`}
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <button 
+                        onClick={checkVerification}
+                        className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg hover:bg-amber-700 transition-all shadow-lg flex items-center justify-center gap-3"
+                      >
+                        {language === 'en' ? "I've verified my email" : "Nkakakasizza email yange"}
+                      </button>
+                      
+                      <button 
+                        onClick={async () => {
+                          try {
+                            await sendVerification();
+                            alert(language === 'en' ? 'Verification email resent!' : 'Email ey’okukakasa eddiddemu okusindikibwa!');
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                        className="text-amber-600 hover:text-amber-700 font-bold text-sm"
+                      >
+                        {language === 'en' ? "Resend verification link" : "Ddamu osindike akalango"}
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          logout();
+                          setIsEmailVerifying(false);
+                          setShowAuthModal(false);
+                        }}
+                        className="block w-full text-slate-400 hover:text-slate-600 font-medium text-sm mt-4"
+                      >
+                        {language === 'en' ? 'Sign out' : 'Fuluma'}
+                      </button>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold mb-2">
+                      {authMode === 'signin' 
+                        ? (language === 'en' ? 'Sign in to continue' : 'Yingira okusobola okweyongerayo')
+                        : (language === 'en' ? 'Create an account' : 'Kola akawunti empya')}
+                    </h2>
+                    <p className="text-slate-500 mb-6">
+                      {language === 'en' 
+                        ? 'You have used your 2 free questions. Sign in to get unlimited access to the Oracle.' 
+                        : 'Okozesezza ebibuuzo byo 2 eby’obwereere. Yingira okusobola okukozesa Oracle mu ngeri etaliiko kkomo.'}
+                    </p>
+
+                    {authError && (
+                      <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm flex items-start gap-3 text-left">
+                        <Info size={18} className="shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold mb-1">{language === 'en' ? 'Auth Failed' : 'Okuyingira kugaanyi'}</p>
+                          <p className="opacity-90">{authError}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-4 mb-6">
+                      <div className="text-left">
+                        <label className="block text-sm font-medium text-slate-700 mb-1 ml-1">
+                          {language === 'en' ? 'Email Address' : 'Email'}
+                        </label>
+                        <input 
+                          type="email"
+                          value={authEmail}
+                          onChange={(e) => setAuthEmail(e.target.value)}
+                          placeholder="name@example.com"
+                          className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                        />
+                      </div>
+                      <div className="text-left">
+                        <label className="block text-sm font-medium text-slate-700 mb-1 ml-1">
+                          {language === 'en' ? 'Password' : 'Ebisumuluzo'}
+                        </label>
+                        <input 
+                          type="password"
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                        />
+                      </div>
+                      
+                      <button 
+                        disabled={isSigningIn || !authEmail || !authPassword}
+                        onClick={async () => {
+                          setAuthError(null);
+                          setIsSigningIn(true);
+                          try {
+                            if (authMode === 'signin') {
+                              await signInWithEmail(authEmail, authPassword);
+                            } else {
+                              await signUpWithEmail(authEmail, authPassword);
+                              await sendVerification();
+                              setVerificationSent(true);
+                            }
+                            // Don't close modal if we need verification
+                            if (authMode === 'signin' || !auth.currentUser?.emailVerified) {
+                              // If it's a signin, it might still need verification
+                              if (auth.currentUser && !auth.currentUser.emailVerified) {
+                                setIsEmailVerifying(true);
+                              } else {
+                                setShowAuthModal(false);
+                              }
+                            }
+                          } catch (error: any) {
+                            console.error("Auth error:", error);
+                            let msg = error.message;
+                            if (msg.includes("auth/user-not-found") || msg.includes("auth/wrong-password") || msg.includes("auth/invalid-credential")) {
+                              msg = language === 'en' ? "Invalid email or password." : "Email oba ebisumuluzo tebikola.";
+                            } else if (msg.includes("auth/email-already-in-use")) {
+                              msg = language === 'en' ? "Email already in use." : "Email eno ekozesebwa dda.";
+                            } else if (msg.includes("auth/weak-password")) {
+                              msg = language === 'en' ? "Password is too weak." : "Ebisumuluzo bino binafu nnyo.";
+                            }
+                            setAuthError(msg);
+                          } finally {
+                            setIsSigningIn(false);
+                          }
+                        }}
+                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all shadow-lg flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSigningIn ? (
+                          <Loader2 size={24} className="animate-spin" />
+                        ) : (
+                          authMode === 'signin' 
+                            ? (language === 'en' ? 'Sign In' : 'Yingira')
+                            : (language === 'en' ? 'Create Account' : 'Kola Akawunti')
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="relative mb-6">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-slate-200"></div>
+                      </div>
+                      <div className="relative flex justify-center text-sm">
+                        <span className="px-2 bg-white text-slate-400">
+                          {language === 'en' ? 'Or continue with' : 'Oba kozesa'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <button 
+                      disabled={isSigningIn}
+                      onClick={async () => {
+                        setAuthError(null);
+                        setIsSigningIn(true);
+                        try {
+                          await signInWithGoogle();
+                          setShowAuthModal(false);
+                        } catch (error: any) {
+                          console.error("Sign in error:", error);
+                          let msg = error.message;
+                          if (msg.includes("auth/unauthorized-domain")) {
+                            msg = language === 'en' 
+                              ? `This domain (${window.location.hostname}) is not authorized in Firebase. Please add it to 'Authorized domains' in your Firebase console. If you've already added it, please wait 5 minutes for it to propagate.`
+                              : `Omukutu guno (${window.location.hostname}) tegukkiriziddwa mu Firebase. Gulyongereko mu 'Authorized domains' mu Firebase console yo. Bwoba ogulyongeddeko dda, linda eddakiika 5 bisobole okutandika okukola.`;
+                          } else if (msg.includes("auth/popup-blocked")) {
+                            msg = language === 'en'
+                              ? "The sign-in popup was blocked. Please allow popups for this site or try opening the app in a new tab."
+                              : "Eidirisa ly'okuyingira ligaanyi okugguka. Gulawo 'popups' mu nteekateeka za 'browser' yo oba gezaako okuggulawo app mu 'tab' empya.";
+                          }
+                          setAuthError(msg);
+                        } finally {
+                          setIsSigningIn(false);
+                        }
+                      }}
+                      className="w-full py-4 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold text-lg hover:bg-slate-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSigningIn ? (
+                        <Loader2 size={24} className="animate-spin" />
+                      ) : (
+                        <>
+                          <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
+                          {language === 'en' ? 'Google' : 'Google'}
+                        </>
+                      )}
+                    </button>
+
+                    <div className="mt-6 flex flex-col items-center gap-2">
+                      <button 
+                        onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                        className="text-amber-600 hover:text-amber-700 font-bold text-sm"
+                      >
+                        {authMode === 'signin' 
+                          ? (language === 'en' ? "Don't have an account? Sign Up" : "Tolina akawunti? Kola empya")
+                          : (language === 'en' ? "Already have an account? Sign In" : "Olina akawunti? Yingira")}
+                      </button>
+                      
+                      <button 
+                        onClick={() => setShowAuthModal(false)}
+                        className="text-slate-400 hover:text-slate-600 font-medium text-sm"
+                      >
+                        {language === 'en' ? 'Maybe later' : 'Edda'}
+                      </button>
+                    </div>
+                  </>
                 )}
-                
-                <button 
-                  disabled={isSigningIn}
-                  onClick={async () => {
-                    setAuthError(null);
-                    setIsSigningIn(true);
-                    try {
-                      await signInWithGoogle();
-                      setShowAuthModal(false);
-                    } catch (error: any) {
-                      console.error("Sign in error:", error);
-                      let msg = error.message;
-                      if (msg.includes("auth/unauthorized-domain")) {
-                        msg = language === 'en' 
-                          ? `This domain (${window.location.hostname}) is not authorized in Firebase. Please add it to 'Authorized domains' in your Firebase console. If you've already added it, please wait 5 minutes for it to propagate.`
-                          : `Omukutu guno (${window.location.hostname}) tegukkiriziddwa mu Firebase. Gulyongereko mu 'Authorized domains' mu Firebase console yo. Bwoba ogulyongeddeko dda, linda eddakiika 5 bisobole okutandika okukola.`;
-                      } else if (msg.includes("auth/popup-blocked")) {
-                        msg = language === 'en'
-                          ? "The sign-in popup was blocked. Please allow popups for this site or try opening the app in a new tab."
-                          : "Eidirisa ly'okuyingira ligaanyi okugguka. Gulawo 'popups' mu nteekateeka za 'browser' yo oba gezaako okuggulawo app mu 'tab' empya.";
-                      }
-                      setAuthError(msg);
-                    } finally {
-                      setIsSigningIn(false);
-                    }
-                  }}
-                  className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg hover:bg-amber-700 transition-all shadow-lg shadow-amber-200 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSigningIn ? (
-                    <Loader2 size={24} className="animate-spin" />
-                  ) : (
-                    <>
-                      <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
-                      {language === 'en' ? 'Sign in with Google' : 'Yingira ne Google'}
-                    </>
-                  )}
-                </button>
-                
-                <button 
-                  onClick={() => setShowAuthModal(false)}
-                  className="mt-4 text-slate-400 hover:text-slate-600 font-medium text-sm"
-                >
-                  {language === 'en' ? 'Maybe later' : 'Edda'}
-                </button>
               </div>
               <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
                 <p className="text-xs text-slate-400">
