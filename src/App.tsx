@@ -962,12 +962,12 @@ export default function App() {
                       let msg = error.message;
                       if (msg.includes("auth/unauthorized-domain")) {
                         msg = language === 'en' 
-                          ? "This domain is not authorized in Firebase. Please add it to 'Authorized domains' in your Firebase console."
-                          : "Omukutu guno tegukkiriziddwa mu Firebase. Gulyongereko mu 'Authorized domains' mu Firebase console yo.";
+                          ? `This domain (${window.location.hostname}) is not authorized in Firebase. Please add it to 'Authorized domains' in your Firebase console. If you've already added it, please wait 5 minutes for it to propagate.`
+                          : `Omukutu guno (${window.location.hostname}) tegukkiriziddwa mu Firebase. Gulyongereko mu 'Authorized domains' mu Firebase console yo. Bwoba ogulyongeddeko dda, linda eddakiika 5 bisobole okutandika okukola.`;
                       } else if (msg.includes("auth/popup-blocked")) {
                         msg = language === 'en'
-                          ? "The sign-in popup was blocked. Please allow popups for this site in your browser settings."
-                          : "Eidirisa ly'okuyingira ligaanyi okugguka. Gulawo 'popups' mu nteekateeka za 'browser' yo.";
+                          ? "The sign-in popup was blocked. Please allow popups for this site or try opening the app in a new tab."
+                          : "Eidirisa ly'okuyingira ligaanyi okugguka. Gulawo 'popups' mu nteekateeka za 'browser' yo oba gezaako okuggulawo app mu 'tab' empya.";
                       }
                       setAuthError(msg);
                     } finally {
