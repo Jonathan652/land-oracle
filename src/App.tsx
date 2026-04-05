@@ -162,6 +162,7 @@ export default function App() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'sending' | 'prompted'>('idle');
   const [paymentPhone, setPaymentPhone] = useState('');
+  const [premiumReportsCount, setPremiumReportsCount] = useState(0);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -511,26 +512,29 @@ export default function App() {
         const userRef = doc(db, 'users', firebaseUser.uid);
         try {
           const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            const data = userSnap.data();
-            setFreeQuestionsRemaining(Math.max(0, 2 - (data.freeQuestionsUsed || 0)));
-            setVoiceMessagesRemaining(Math.max(0, 2 - (data.voiceMessagesUsed || 0)));
-            setIsPro(data.isPro || false);
-          } else {
-            // Create new profile
-            await setDoc(userRef, {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
-              freeQuestionsUsed: 0,
-              voiceMessagesUsed: 0,
-              isPro: false,
-              createdAt: serverTimestamp()
-            });
-            setFreeQuestionsRemaining(2);
-            setVoiceMessagesRemaining(2);
-          }
+            if (userSnap.exists()) {
+              const data = userSnap.data();
+              setFreeQuestionsRemaining(Math.max(0, 2 - (data.freeQuestionsUsed || 0)));
+              setVoiceMessagesRemaining(Math.max(0, 2 - (data.voiceMessagesUsed || 0)));
+              setPremiumReportsCount(data.premiumReportsCount || 0);
+              setIsPro(data.isPro || false);
+            } else {
+              // Create new profile
+              await setDoc(userRef, {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoURL: firebaseUser.photoURL,
+                freeQuestionsUsed: 0,
+                voiceMessagesUsed: 0,
+                premiumReportsCount: 0,
+                isPro: false,
+                createdAt: serverTimestamp()
+              });
+              setFreeQuestionsRemaining(2);
+              setVoiceMessagesRemaining(2);
+              setPremiumReportsCount(0);
+            }
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
         }
@@ -832,9 +836,21 @@ export default function App() {
                       </button>
                     ) : (
                       <button 
-                        onClick={() => {
+                        onClick={async () => {
                           setShowPaymentModal(false);
                           setPaymentStatus('idle');
+                          const newCount = premiumReportsCount + 1;
+                          setPremiumReportsCount(newCount);
+                          
+                          if (user) {
+                            const userRef = doc(db, 'users', user.uid);
+                            try {
+                              await updateDoc(userRef, { premiumReportsCount: newCount });
+                            } catch (error) {
+                              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+                            }
+                          }
+
                           alert(language === 'en' 
                             ? 'Thank you. Your report will be ready as soon as the transaction is confirmed.' 
                             : 'Weebale. Lipoota yo ejja kuba yeetegese mangu ddala nga tumaze okukakasa.');
@@ -983,6 +999,12 @@ export default function App() {
                             onClick={() => {
                               if (!user) {
                                 setShowAuthModal(true);
+                                return;
+                              }
+                              if (!isPro && premiumReportsCount >= 2) {
+                                alert(language === 'en' 
+                                  ? 'You have reached the limit of 2 premium reports for free users. Please upgrade to Pro for unlimited reports.' 
+                                  : 'Owezezza lipoota 2 eza premium ez\'obwereere. Funa Oracle Pro okufuna lipoota ezirala zonna.');
                                 return;
                               }
                               setShowPaymentModal(true);
