@@ -155,7 +155,8 @@ export default function App() {
   const [autoTalkBack, setAutoTalkBack] = useState(true);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'verifying'>('idle');
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'sending' | 'prompted'>('idle');
+  const [paymentPhone, setPaymentPhone] = useState('');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -759,52 +760,90 @@ export default function App() {
                       {language === 'en' ? 'Get Premium Report' : 'Funa Lipoota ey\'enjawulo'}
                     </h3>
                     <p className="text-slate-500">
-                      {language === 'en' 
-                        ? 'To generate a certified legal report for this consultation, please pay a small fee.' 
-                        : 'Okufuna lipoota y\'amateeka ekakasiddwa ku nsonga eno, sasula akasente katono.'}
+                      {paymentStatus === 'prompted' 
+                        ? (language === 'en' ? 'Check your phone and enter your PIN to complete the payment.' : 'Kebera essimu yo oyingize PIN yo okumaliriza okusasula.')
+                        : (language === 'en' ? 'Enter your Mobile Money number to receive a payment prompt.' : 'Yingiza ennamba yo ey\'essimu okufuna obubaka bw\'okusasula.')
+                      }
                     </p>
                   </div>
 
-                  <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 space-y-4">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">{language === 'en' ? 'Amount' : 'Omuwendo'}</span>
-                      <span className="font-bold text-slate-900">UGX 5,000</span>
+                  {paymentStatus !== 'prompted' ? (
+                    <div className="space-y-4">
+                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex items-center gap-3 focus-within:border-amber-400 transition-colors">
+                        <Smartphone size={20} className="text-slate-400" />
+                        <input 
+                          type="tel" 
+                          placeholder="07..." 
+                          value={paymentPhone}
+                          onChange={(e) => setPaymentPhone(e.target.value)}
+                          className="bg-transparent border-none focus:ring-0 w-full font-bold text-slate-900"
+                        />
+                      </div>
+                      <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-amber-700 font-medium">{language === 'en' ? 'Amount' : 'Omuwendo'}</span>
+                          <span className="font-bold text-amber-900">UGX 5,000</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">{language === 'en' ? 'Send to' : 'Weereza ku'}</span>
-                      <span className="font-bold text-amber-600 select-all">0792724495</span>
+                  ) : (
+                    <div className="bg-green-50 rounded-2xl p-6 border border-green-100 space-y-2">
+                      <div className="flex items-center justify-center gap-2 text-green-700 font-bold">
+                        <CheckCircle2 size={20} />
+                        {language === 'en' ? 'Prompt Sent!' : 'Obubaka Buweerezeddwa!'}
+                      </div>
+                      <p className="text-xs text-green-600">
+                        {language === 'en' 
+                          ? `A payment request has been sent to ${paymentPhone}.` 
+                          : `Okusaba okusasula kuweerezeddwa ku ${paymentPhone}.`}
+                      </p>
                     </div>
-                    <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-400 uppercase tracking-wider font-bold">
-                      {language === 'en' ? 'Mobile Money (Airtel/MTN)' : 'Mobile Money (Airtel/MTN)'}
-                    </div>
-                  </div>
+                  )}
 
                   <div className="space-y-3">
-                    <button 
-                      onClick={() => {
-                        setPaymentStatus('verifying');
-                        setTimeout(() => {
+                    {paymentStatus !== 'prompted' ? (
+                      <button 
+                        onClick={() => {
+                          if (!paymentPhone.match(/^(07|2567)\d{8}$/)) {
+                            alert(language === 'en' ? 'Please enter a valid Ugandan phone number.' : 'Yingiza ennamba ey\'essimu entuufu.');
+                            return;
+                          }
+                          setPaymentStatus('sending');
+                          setTimeout(() => {
+                            setPaymentStatus('prompted');
+                          }, 2000);
+                        }}
+                        disabled={paymentStatus === 'sending' || !paymentPhone}
+                        className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-bold shadow-lg shadow-amber-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {paymentStatus === 'sending' ? (
+                          <>
+                            <Loader2 size={20} className="animate-spin" />
+                            {language === 'en' ? 'Initiating...' : 'Tutegeka...'}
+                          </>
+                        ) : (
+                          language === 'en' ? 'Pay Now' : 'Sasula Kati'
+                        )}
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => {
+                          setShowPaymentModal(false);
                           setPaymentStatus('idle');
                           alert(language === 'en' 
-                            ? 'Payment verification in progress. Your report will be ready shortly after the transaction is confirmed.' 
-                            : 'Okukakasa okusasula kugenda mu maaso. Lipoota yo ejja kuba yeetegese mangu ddala nga tumaze okukakasa.');
-                          setShowPaymentModal(false);
-                        }, 2000);
-                      }}
-                      disabled={paymentStatus === 'verifying'}
-                      className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-bold shadow-lg shadow-amber-200 transition-all flex items-center justify-center gap-2"
-                    >
-                      {paymentStatus === 'verifying' ? (
-                        <>
-                          <Loader2 size={20} className="animate-spin" />
-                          {language === 'en' ? 'Verifying...' : 'Tukakasa...'}
-                        </>
-                      ) : (
-                        language === 'en' ? 'I Have Sent the Money' : 'Nsasudde'
-                      )}
-                    </button>
+                            ? 'Thank you. Your report will be ready as soon as the transaction is confirmed.' 
+                            : 'Weebale. Lipoota yo ejja kuba yeetegese mangu ddala nga tumaze okukakasa.');
+                        }}
+                        className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold shadow-lg transition-all"
+                      >
+                        {language === 'en' ? 'Done' : 'Kiwuwedde'}
+                      </button>
+                    )}
                     <button 
-                      onClick={() => setShowPaymentModal(false)}
+                      onClick={() => {
+                        setShowPaymentModal(false);
+                        setPaymentStatus('idle');
+                      }}
                       className="w-full py-3 text-slate-500 font-medium hover:text-slate-800 transition-colors"
                     >
                       {language === 'en' ? 'Cancel' : 'Sazaamu'}
