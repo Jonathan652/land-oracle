@@ -373,7 +373,7 @@ export default function App() {
       try {
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Land Act." }] }],
+          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
           config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.7 },
         });
 
@@ -900,19 +900,26 @@ export default function App() {
                   </p>
                 </motion.div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
                   {quickQuestions.map((q, i) => (
-                    <motion.button key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }} onClick={() => handleQuickQuestion(language === 'en' ? q.en : q.lg)} className="p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-50 transition-all group">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="p-2 bg-amber-50 rounded-lg text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                          {i === 0 && <Map size={20} />}
-                          {i === 1 && <ShieldCheck size={20} />}
-                          {i === 2 && <BookOpen size={20} />}
-                          {i === 3 && <Gavel size={20} />}
+                    <motion.button 
+                      key={i} 
+                      initial={{ opacity: 0, scale: 0.95 }} 
+                      animate={{ opacity: 1, scale: 1 }} 
+                      transition={{ delay: i * 0.1 }} 
+                      onClick={() => handleQuickQuestion(language === 'en' ? q.en : q.lg)} 
+                      className="w-full p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-50 transition-all group flex flex-col justify-between min-h-[140px]"
+                    >
+                      <div className="flex justify-between items-start mb-4 w-full">
+                        <div className="p-3 bg-amber-50 rounded-xl text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
+                          {i === 0 && <ShieldCheck size={24} />}
+                          {i === 1 && <User size={24} />}
+                          {i === 2 && <Map size={24} />}
+                          {i === 3 && <Gavel size={24} />}
                         </div>
-                        <ChevronRight size={18} className="text-slate-300 group-hover:text-amber-500 transition-colors" />
+                        <ChevronRight size={20} className="text-slate-300 group-hover:text-amber-500 transition-colors" />
                       </div>
-                      <p className="font-semibold text-slate-800">{language === 'en' ? q.en : q.lg}</p>
+                      <p className="font-bold text-slate-800 text-base leading-snug">{language === 'en' ? q.en : q.lg}</p>
                     </motion.button>
                   ))}
                 </div>
@@ -1131,8 +1138,8 @@ export default function App() {
             )}
             <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">
               {language === 'en' 
-                ? 'Developed by Jonathan Musiime • Based on Uganda Land Act Cap 236' 
-                : 'Kyakoleddwa Jonathan Musiime • Okusinziira ku tteeka ly\'ettaka mu Uganda Cap 236'}
+                ? 'Developed by Jonathan Musiime • Based on the Constitution and Laws of Uganda' 
+                : 'Kyakoleddwa Jonathan Musiime • Okusinziira ku Ssemateeka n\'amateeka ga Uganda'}
             </p>
           </div>
         </div>
