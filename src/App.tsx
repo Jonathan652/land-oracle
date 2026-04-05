@@ -136,6 +136,8 @@ export default function App() {
   const [isPro, setIsPro] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -931,25 +933,57 @@ export default function App() {
                 <h2 className="text-2xl font-bold mb-2">
                   {language === 'en' ? 'Sign in to continue' : 'Yingira okusobola okweyongerayo'}
                 </h2>
-                <p className="text-slate-500 mb-8">
+                <p className="text-slate-500 mb-6">
                   {language === 'en' 
                     ? 'You have used your 2 free questions. Sign in to get unlimited access to the Oracle.' 
                     : 'Okozesezza ebibuuzo byo 2 eby’obwereere. Yingira okusobola okukozesa Oracle mu ngeri etaliiko kkomo.'}
                 </p>
+
+                {authError && (
+                  <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm flex items-start gap-3 text-left">
+                    <Info size={18} className="shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold mb-1">{language === 'en' ? 'Sign-in Failed' : 'Okuyingira kugaanyi'}</p>
+                      <p className="opacity-90">{authError}</p>
+                    </div>
+                  </div>
+                )}
                 
                 <button 
+                  disabled={isSigningIn}
                   onClick={async () => {
+                    setAuthError(null);
+                    setIsSigningIn(true);
                     try {
                       await signInWithGoogle();
                       setShowAuthModal(false);
-                    } catch (error) {
+                    } catch (error: any) {
                       console.error("Sign in error:", error);
+                      let msg = error.message;
+                      if (msg.includes("auth/unauthorized-domain")) {
+                        msg = language === 'en' 
+                          ? "This domain is not authorized in Firebase. Please add it to 'Authorized domains' in your Firebase console."
+                          : "Omukutu guno tegukkiriziddwa mu Firebase. Gulyongereko mu 'Authorized domains' mu Firebase console yo.";
+                      } else if (msg.includes("auth/popup-blocked")) {
+                        msg = language === 'en'
+                          ? "The sign-in popup was blocked. Please allow popups for this site in your browser settings."
+                          : "Eidirisa ly'okuyingira ligaanyi okugguka. Gulawo 'popups' mu nteekateeka za 'browser' yo.";
+                      }
+                      setAuthError(msg);
+                    } finally {
+                      setIsSigningIn(false);
                     }
                   }}
-                  className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg hover:bg-amber-700 transition-all shadow-lg shadow-amber-200 flex items-center justify-center gap-3"
+                  className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg hover:bg-amber-700 transition-all shadow-lg shadow-amber-200 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
-                  {language === 'en' ? 'Sign in with Google' : 'Yingira ne Google'}
+                  {isSigningIn ? (
+                    <Loader2 size={24} className="animate-spin" />
+                  ) : (
+                    <>
+                      <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
+                      {language === 'en' ? 'Sign in with Google' : 'Yingira ne Google'}
+                    </>
+                  )}
                 </button>
                 
                 <button 
