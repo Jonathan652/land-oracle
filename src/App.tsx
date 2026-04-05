@@ -28,6 +28,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
+import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { UGANDA_LAND_ACT_CONTEXT } from './constants/landActText';
 import { cn } from './lib/utils';
 
@@ -131,8 +134,11 @@ export default function App() {
   const [audioCache, setAudioCache] = useState<Record<string, AudioBuffer>>({});
   const [activeTab, setActiveTab] = useState<'chat' | 'services'>('chat');
   const [showHistory, setShowHistory] = useState(false);
-  const [freeQuestionsRemaining, setFreeQuestionsRemaining] = useState(5);
+  const [freeQuestionsRemaining, setFreeQuestionsRemaining] = useState(2);
+  const [user, setUser] = useState<any>(null);
   const [isPro, setIsPro] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -256,6 +262,12 @@ export default function App() {
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
 
+    if (!user && freeQuestionsRemaining <= 0) {
+      setShowAuthModal(true);
+      setIsLoading(false);
+      return;
+    }
+
     const reader = new FileReader();
     reader.readAsDataURL(audioBlob);
     reader.onloadend = async () => {
@@ -285,7 +297,20 @@ export default function App() {
         const finalMessages = [...updatedMessages, assistantMessage];
         updateSessionMessages(finalMessages);
         speakText(assistantMessage.content, assistantMessage.id);
-        if (!isPro) setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        
+        if (user) {
+          const userRef = doc(db, 'users', user.uid);
+          try {
+            const userSnap = await getDoc(userRef);
+            const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
+            await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
+            setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          }
+        } else {
+          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        }
       } catch (error) {
         console.error("Voice Processing Error:", error);
         const errorMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: "Nfuna obuzibu mu kuwuliriza eddoboozi lyo.", timestamp: new Date() };
@@ -405,6 +430,44 @@ export default function App() {
   };
 
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        // Sync with Firestore
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        try {
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            setFreeQuestionsRemaining(Math.max(0, 2 - (data.freeQuestionsUsed || 0)));
+            setIsPro(data.isPro || false);
+          } else {
+            // Create new profile
+            await setDoc(userRef, {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName,
+              photoURL: firebaseUser.photoURL,
+              freeQuestionsUsed: 0,
+              isPro: false,
+              createdAt: serverTimestamp()
+            });
+            setFreeQuestionsRemaining(2);
+          }
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
+        }
+      } else {
+        setUser(null);
+        setIsPro(false);
+        setFreeQuestionsRemaining(2); // Reset for guests (local storage handles guest sessions)
+      }
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     if (!process.env.GEMINI_API_KEY) {
       console.error("CRITICAL: GEMINI_API_KEY is missing from environment variables.");
       const warningMessage: Message = {
@@ -432,7 +495,11 @@ export default function App() {
   const handleSend = async (textOverride?: string) => {
     const messageText = textOverride || input;
     if (!messageText.trim() || isLoading) return;
-    if (!isPro && freeQuestionsRemaining <= 0) return;
+    
+    if (!user && freeQuestionsRemaining <= 0) {
+      setShowAuthModal(true);
+      return;
+    }
 
     // Mobile Audio Unlock: Resume context immediately on user click
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -453,7 +520,20 @@ export default function App() {
       const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
       updateSessionMessages([...updatedMessages, assistantMessage]);
       speakText(assistantMessage.content, assistantMessage.id);
-      if (!isPro) setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+      
+      if (user) {
+        const userRef = doc(db, 'users', user.uid);
+        try {
+          const userSnap = await getDoc(userRef);
+          const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
+          await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
+          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+        }
+      } else {
+        setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+      }
     } catch (error: any) {
       console.error("Oracle Error Details:", error);
       let errorMessage = "Nfuna obuzibu mu kukuddamu.";
@@ -519,6 +599,34 @@ export default function App() {
             <Languages size={16} />
             <span className="hidden sm:inline">{language === 'en' ? 'English' : 'Luganda'}</span>
           </button>
+
+          {user ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-sm font-medium">
+                {user.photoURL ? (
+                  <img src={user.photoURL} className="w-5 h-5 rounded-full" alt="" />
+                ) : (
+                  <User size={16} />
+                )}
+                <span className="hidden sm:inline truncate max-w-[100px]">{user.displayName || user.email}</span>
+              </div>
+              <button 
+                onClick={() => logout()}
+                className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                title={language === 'en' ? 'Logout' : 'Fuluma'}
+              >
+                <X size={18} />
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => setShowAuthModal(true)}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium shadow-sm"
+            >
+              <User size={16} />
+              <span>{language === 'en' ? 'Sign In' : 'Yingira'}</span>
+            </button>
+          )}
         </div>
       </nav>
 
@@ -802,6 +910,69 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Auth Modal */}
+      <AnimatePresence>
+        {showAuthModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAuthModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <ShieldCheck size={32} />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">
+                  {language === 'en' ? 'Sign in to continue' : 'Yingira okusobola okweyongerayo'}
+                </h2>
+                <p className="text-slate-500 mb-8">
+                  {language === 'en' 
+                    ? 'You have used your 2 free questions. Sign in to get unlimited access to the Oracle.' 
+                    : 'Okozesezza ebibuuzo byo 2 eby’obwereere. Yingira okusobola okukozesa Oracle mu ngeri etaliiko kkomo.'}
+                </p>
+                
+                <button 
+                  onClick={async () => {
+                    try {
+                      await signInWithGoogle();
+                      setShowAuthModal(false);
+                    } catch (error) {
+                      console.error("Sign in error:", error);
+                    }
+                  }}
+                  className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg hover:bg-amber-700 transition-all shadow-lg shadow-amber-200 flex items-center justify-center gap-3"
+                >
+                  <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
+                  {language === 'en' ? 'Sign in with Google' : 'Yingira ne Google'}
+                </button>
+                
+                <button 
+                  onClick={() => setShowAuthModal(false)}
+                  className="mt-4 text-slate-400 hover:text-slate-600 font-medium text-sm"
+                >
+                  {language === 'en' ? 'Maybe later' : 'Edda'}
+                </button>
+              </div>
+              <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
+                <p className="text-xs text-slate-400">
+                  {language === 'en' 
+                    ? 'By signing in, you agree to our Terms of Service and Privacy Policy.' 
+                    : 'Bw’oyingira, oba okkirizza amateeka gaffe n’enkola y’obukuumi.'}
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

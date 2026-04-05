@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (required, immutable)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - freeQuestionsUsed: number (required)
+    //   - isPro: boolean (required)
+    //   - createdAt: timestamp (required, immutable)
+    //
+    // Collection: /users/{userId}/sessions/{sessionId}
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - title: string (required)
+    //   - lastUpdated: timestamp (required)
+    //   - createdAt: timestamp (required, immutable)
+    //
+    // Collection: /users/{userId}/sessions/{sessionId}/messages/{messageId}
+    // Fields:
+    //   - role: string (required, enum: ['user', 'assistant'])
+    //   - content: string (required, max: 5000)
+    //   - timestamp: timestamp (required, immutable)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'freeQuestionsUsed', 'isPro', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.freeQuestionsUsed is number &&
+             data.isPro is bool;
+    }
+
+    function isValidSession(data) {
+      return hasOnlyAllowedFields(['uid', 'title', 'lastUpdated', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 100;
+    }
+
+    function isValidMessage(data) {
+      return hasOnlyAllowedFields(['role', 'content', 'timestamp']) &&
+             data.role in ['user', 'assistant'] &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
+                      request.resource.data.uid == resource.data.uid &&
+                      request.resource.data.email == resource.data.email &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+
+      match /sessions/{sessionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSession(request.resource.data);
+        allow update: if isOwner(userId) && isValidSession(request.resource.data) &&
+                        request.resource.data.uid == resource.data.uid &&
+                        request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(userId);
+
+        match /messages/{messageId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) && isValidMessage(request.resource.data);
+        }
+      }
+    }
+  }
+}
