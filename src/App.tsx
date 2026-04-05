@@ -159,9 +159,6 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [autoTalkBack, setAutoTalkBack] = useState(true);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'sending' | 'prompted'>('idle');
-  const [paymentPhone, setPaymentPhone] = useState('');
   const [premiumReportsCount, setPremiumReportsCount] = useState(0);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -742,140 +739,6 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Payment Modal */}
-        <AnimatePresence>
-          {showPaymentModal && (
-            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowPaymentModal(false)}
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-              />
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl overflow-hidden"
-              >
-                <div className="p-8 space-y-6 text-center">
-                  <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
-                    <Smartphone size={40} className="text-amber-600" />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <h3 className="text-2xl font-bold text-slate-900">
-                      {language === 'en' ? 'Get Premium Report' : 'Funa Lipoota ey\'enjawulo'}
-                    </h3>
-                    <p className="text-slate-500">
-                      {paymentStatus === 'prompted' 
-                        ? (language === 'en' ? 'Check your phone and enter your PIN to complete the payment.' : 'Kebera essimu yo oyingize PIN yo okumaliriza okusasula.')
-                        : (language === 'en' ? 'Enter your Mobile Money number to receive a payment prompt.' : 'Yingiza ennamba yo ey\'essimu okufuna obubaka bw\'okusasula.')
-                      }
-                    </p>
-                  </div>
-
-                  {paymentStatus !== 'prompted' ? (
-                    <div className="space-y-4">
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex items-center gap-3 focus-within:border-amber-400 transition-colors">
-                        <Smartphone size={20} className="text-slate-400" />
-                        <input 
-                          type="tel" 
-                          placeholder="07..." 
-                          value={paymentPhone}
-                          onChange={(e) => setPaymentPhone(e.target.value)}
-                          className="bg-transparent border-none focus:ring-0 w-full font-bold text-slate-900"
-                        />
-                      </div>
-                      <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-amber-700 font-medium">{language === 'en' ? 'Amount' : 'Omuwendo'}</span>
-                          <span className="font-bold text-amber-900">UGX 5,000</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-green-50 rounded-2xl p-6 border border-green-100 space-y-2">
-                      <div className="flex items-center justify-center gap-2 text-green-700 font-bold">
-                        <CheckCircle2 size={20} />
-                        {language === 'en' ? 'Prompt Sent!' : 'Obubaka Buweerezeddwa!'}
-                      </div>
-                      <p className="text-xs text-green-600">
-                        {language === 'en' 
-                          ? `A payment request has been sent to ${paymentPhone}.` 
-                          : `Okusaba okusasula kuweerezeddwa ku ${paymentPhone}.`}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    {paymentStatus !== 'prompted' ? (
-                      <button 
-                        onClick={() => {
-                          if (!paymentPhone.match(/^(07|2567)\d{8}$/)) {
-                            alert(language === 'en' ? 'Please enter a valid Ugandan phone number.' : 'Yingiza ennamba ey\'essimu entuufu.');
-                            return;
-                          }
-                          setPaymentStatus('sending');
-                          setTimeout(() => {
-                            setPaymentStatus('prompted');
-                          }, 2000);
-                        }}
-                        disabled={paymentStatus === 'sending' || !paymentPhone}
-                        className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-bold shadow-lg shadow-amber-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                      >
-                        {paymentStatus === 'sending' ? (
-                          <>
-                            <Loader2 size={20} className="animate-spin" />
-                            {language === 'en' ? 'Initiating...' : 'Tutegeka...'}
-                          </>
-                        ) : (
-                          language === 'en' ? 'Pay Now' : 'Sasula Kati'
-                        )}
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={async () => {
-                          setShowPaymentModal(false);
-                          setPaymentStatus('idle');
-                          const newCount = premiumReportsCount + 1;
-                          setPremiumReportsCount(newCount);
-                          
-                          if (user) {
-                            const userRef = doc(db, 'users', user.uid);
-                            try {
-                              await updateDoc(userRef, { premiumReportsCount: newCount });
-                            } catch (error) {
-                              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-                            }
-                          }
-
-                          alert(language === 'en' 
-                            ? 'Thank you. Your report will be ready as soon as the transaction is confirmed.' 
-                            : 'Weebale. Lipoota yo ejja kuba yeetegese mangu ddala nga tumaze okukakasa.');
-                        }}
-                        className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold shadow-lg transition-all"
-                      >
-                        {language === 'en' ? 'Done' : 'Kiwuwedde'}
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => {
-                        setShowPaymentModal(false);
-                        setPaymentStatus('idle');
-                      }}
-                      className="w-full py-3 text-slate-500 font-medium hover:text-slate-800 transition-colors"
-                    >
-                      {language === 'en' ? 'Cancel' : 'Sazaamu'}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
         {/* History Sidebar/Overlay */}
         <AnimatePresence>
           {showHistory && (
@@ -996,7 +859,7 @@ export default function App() {
                             {isAudioLoading === m.id ? <Loader2 size={18} className="animate-spin" /> : (isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />)}
                           </button>
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               if (!user) {
                                 setShowAuthModal(true);
                                 return;
@@ -1007,7 +870,23 @@ export default function App() {
                                   : 'Owezezza lipoota 2 eza premium ez\'obwereere. Funa Oracle Pro okufuna lipoota ezirala zonna.');
                                 return;
                               }
-                              setShowPaymentModal(true);
+                              
+                              // Handle free download
+                              const newCount = premiumReportsCount + 1;
+                              setPremiumReportsCount(newCount);
+                              
+                              if (user) {
+                                const userRef = doc(db, 'users', user.uid);
+                                try {
+                                  await updateDoc(userRef, { premiumReportsCount: newCount });
+                                } catch (error) {
+                                  handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+                                }
+                              }
+
+                              alert(language === 'en' 
+                                ? 'Your Premium Report is being generated and will be ready for download shortly.' 
+                                : 'Lipoota yo ey\'enjawulo ekolebwa era ejja kuba yeetegese okugiggyako mu kaseera katono.');
                             }}
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"
                           >
