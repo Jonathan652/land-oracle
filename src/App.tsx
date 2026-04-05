@@ -24,7 +24,8 @@ import {
   Download,
   ExternalLink,
   CheckCircle2,
-  X
+  X,
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -153,6 +154,8 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [autoTalkBack, setAutoTalkBack] = useState(true);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'verifying'>('idle');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -729,6 +732,90 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Payment Modal */}
+        <AnimatePresence>
+          {showPaymentModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowPaymentModal(false)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl overflow-hidden"
+              >
+                <div className="p-8 space-y-6 text-center">
+                  <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+                    <Smartphone size={40} className="text-amber-600" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-bold text-slate-900">
+                      {language === 'en' ? 'Get Premium Report' : 'Funa Lipoota ey\'enjawulo'}
+                    </h3>
+                    <p className="text-slate-500">
+                      {language === 'en' 
+                        ? 'To generate a certified legal report for this consultation, please pay a small fee.' 
+                        : 'Okufuna lipoota y\'amateeka ekakasiddwa ku nsonga eno, sasula akasente katono.'}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 space-y-4">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">{language === 'en' ? 'Amount' : 'Omuwendo'}</span>
+                      <span className="font-bold text-slate-900">UGX 5,000</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">{language === 'en' ? 'Send to' : 'Weereza ku'}</span>
+                      <span className="font-bold text-amber-600 select-all">0792724495</span>
+                    </div>
+                    <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-400 uppercase tracking-wider font-bold">
+                      {language === 'en' ? 'Mobile Money (Airtel/MTN)' : 'Mobile Money (Airtel/MTN)'}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      onClick={() => {
+                        setPaymentStatus('verifying');
+                        setTimeout(() => {
+                          setPaymentStatus('idle');
+                          alert(language === 'en' 
+                            ? 'Payment verification in progress. Your report will be ready shortly after the transaction is confirmed.' 
+                            : 'Okukakasa okusasula kugenda mu maaso. Lipoota yo ejja kuba yeetegese mangu ddala nga tumaze okukakasa.');
+                          setShowPaymentModal(false);
+                        }, 2000);
+                      }}
+                      disabled={paymentStatus === 'verifying'}
+                      className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-bold shadow-lg shadow-amber-200 transition-all flex items-center justify-center gap-2"
+                    >
+                      {paymentStatus === 'verifying' ? (
+                        <>
+                          <Loader2 size={20} className="animate-spin" />
+                          {language === 'en' ? 'Verifying...' : 'Tukakasa...'}
+                        </>
+                      ) : (
+                        language === 'en' ? 'I Have Sent the Money' : 'Nsasudde'
+                      )}
+                    </button>
+                    <button 
+                      onClick={() => setShowPaymentModal(false)}
+                      className="w-full py-3 text-slate-500 font-medium hover:text-slate-800 transition-colors"
+                    >
+                      {language === 'en' ? 'Cancel' : 'Sazaamu'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         {/* History Sidebar/Overlay */}
         <AnimatePresence>
           {showHistory && (
@@ -849,7 +936,7 @@ export default function App() {
                             {isAudioLoading === m.id ? <Loader2 size={18} className="animate-spin" /> : (isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />)}
                           </button>
                           <button 
-                            onClick={() => alert(language === 'en' ? 'Premium Report generation requires a small fee (UGX 5,000 via Mobile Money).' : 'Okufuna lipoota eno kyetagisa okusasula (UGX 5,000 okuyita mu Mobile Money).')}
+                            onClick={() => setShowPaymentModal(true)}
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"
                           >
                             <Download size={14} />
