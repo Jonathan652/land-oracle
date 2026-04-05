@@ -540,6 +540,7 @@ export default function App() {
         setIsPro(false);
         setFreeQuestionsRemaining(2); // Reset for guests
         setVoiceMessagesRemaining(0); // Guests can't use voice
+        setPremiumReportsCount(0); // Reset report count for guests
       }
       setIsAuthLoading(false);
     });
