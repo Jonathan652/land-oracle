@@ -1,5 +1,5 @@
 {
   "name": "Luganda Land Oracle",
-  "description": "A vernacular AI legal assistant for the Uganda Land Act, providing accurate guidance in Luganda and English.",
+  "description": "A premier legal expert on the Uganda Land Act and other Ugandan laws, providing bilingual guidance and premium legal reports.",
   "requestFramePermissions": ["microphone"]
 }

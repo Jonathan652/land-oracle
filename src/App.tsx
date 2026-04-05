@@ -71,6 +71,7 @@ Your primary mission is to provide legally precise, accurate, and accessible gui
 
 STRICT LEGAL ADHERENCE:
 - You must base every answer on the specific sections of the Uganda Land Act and other provided laws in the context.
+- Use ULII (Uganda Legal Information Institute - ulii.org) as your primary reference for Ugandan legislation and case law.
 - Be precise with terminology: distinguish clearly between "Mailo", "Freehold", "Leasehold", and "Customary" tenures.
 - Accurately define "Lawful Occupant" and "Bona fide Occupant" per Section 29.
 - Emphasize that a tenant by occupancy can ONLY be evicted for non-payment of ground rent, and only by a court order (Section 33).
@@ -975,7 +976,13 @@ export default function App() {
                             {isAudioLoading === m.id ? <Loader2 size={18} className="animate-spin" /> : (isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />)}
                           </button>
                           <button 
-                            onClick={() => setShowPaymentModal(true)}
+                            onClick={() => {
+                              if (!user) {
+                                setShowAuthModal(true);
+                                return;
+                              }
+                              setShowPaymentModal(true);
+                            }}
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"
                           >
                             <Download size={14} />
@@ -1097,7 +1104,13 @@ export default function App() {
                   </div>
                 </div>
                 <button 
-                  onClick={() => setIsPro(true)}
+                  onClick={() => {
+                    if (!user) {
+                      setShowAuthModal(true);
+                      return;
+                    }
+                    setIsPro(true);
+                  }}
                   className="px-6 py-3 bg-white text-slate-900 rounded-2xl font-bold text-sm hover:bg-slate-100 transition-all w-full md:w-auto"
                 >
                   {language === 'en' ? 'Upgrade to Pro (UGX 20,000)' : 'Funa Pro (UGX 20,000)'}
