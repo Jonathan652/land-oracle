@@ -132,6 +132,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'services'>('chat');
   const [showHistory, setShowHistory] = useState(false);
   const [freeQuestionsRemaining, setFreeQuestionsRemaining] = useState(2);
+  const [voiceMessagesRemaining, setVoiceMessagesRemaining] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [isPro, setIsPro] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -331,6 +332,19 @@ export default function App() {
   const speakText = async (text: string, messageId: string) => {
     if (isSpeaking === messageId) { stopSpeaking(); return; }
     
+    // 1. Check if user is logged in
+    if (!user) {
+      setShowAuthModal(true);
+      setVoiceError(language === 'en' ? "Please sign in to use voice features." : "Yingira okusobola okukozesa eddoboozi.");
+      return;
+    }
+
+    // 2. Check if Pro or has remaining messages
+    if (!isPro && voiceMessagesRemaining <= 0) {
+      setVoiceError(language === 'en' ? "Voice limit reached. Upgrade to Premium for unlimited voice!" : "Okozesezza ebibuuzo by'eddoboozi byonna. Kyusaamu okufuna ebisingawo!");
+      return;
+    }
+
     // Ensure AudioContext is initialized/resumed
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -390,6 +404,19 @@ export default function App() {
         setAudioCache(prev => ({ ...prev, [messageId]: audioBuffer }));
         
         playFromBuffer(audioBuffer, messageId);
+
+        // 3. Increment usage in Firestore if not Pro
+        if (!isPro) {
+          const userRef = doc(db, 'users', user.uid);
+          try {
+            const userSnap = await getDoc(userRef);
+            const currentUsed = userSnap.exists() ? (userSnap.data().voiceMessagesUsed || 0) : 0;
+            await updateDoc(userRef, { voiceMessagesUsed: currentUsed + 1 });
+            setVoiceMessagesRemaining(prev => Math.max(0, prev - 1));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          }
+        }
       } else {
         throw new Error("No audio data received.");
       }
@@ -471,6 +498,7 @@ export default function App() {
           if (userSnap.exists()) {
             const data = userSnap.data();
             setFreeQuestionsRemaining(Math.max(0, 2 - (data.freeQuestionsUsed || 0)));
+            setVoiceMessagesRemaining(Math.max(0, 2 - (data.voiceMessagesUsed || 0)));
             setIsPro(data.isPro || false);
           } else {
             // Create new profile
@@ -480,10 +508,12 @@ export default function App() {
               displayName: firebaseUser.displayName,
               photoURL: firebaseUser.photoURL,
               freeQuestionsUsed: 0,
+              voiceMessagesUsed: 0,
               isPro: false,
               createdAt: serverTimestamp()
             });
             setFreeQuestionsRemaining(2);
+            setVoiceMessagesRemaining(2);
           }
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
@@ -491,7 +521,8 @@ export default function App() {
       } else {
         setUser(null);
         setIsPro(false);
-        setFreeQuestionsRemaining(2); // Reset for guests (local storage handles guest sessions)
+        setFreeQuestionsRemaining(2); // Reset for guests
+        setVoiceMessagesRemaining(0); // Guests can't use voice
       }
       setIsAuthLoading(false);
     });
@@ -551,7 +582,7 @@ export default function App() {
       const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
       updateSessionMessages([...updatedMessages, assistantMessage]);
       
-      if (autoTalkBack) {
+      if (autoTalkBack && (isPro || voiceMessagesRemaining > 0)) {
         speakText(assistantMessage.content, assistantMessage.id);
       }
       
@@ -950,12 +981,19 @@ export default function App() {
               </div>
             )}
             
-            {!isPro && freeQuestionsRemaining > 0 && (
-              <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">
-                {language === 'en' 
-                  ? `${freeQuestionsRemaining} free questions remaining today` 
-                  : `Osigazza ebibuuzo ${freeQuestionsRemaining} eby'obwereere leero`}
-              </p>
+            {!isPro && (
+              <div className="flex flex-col items-center gap-1 mt-3">
+                <p className="text-[10px] text-slate-400 font-medium">
+                  {language === 'en' 
+                    ? `${freeQuestionsRemaining} free questions remaining today` 
+                    : `Osigazza ebibuuzo ${freeQuestionsRemaining} eby'obwereere leero`}
+                </p>
+                <p className="text-[10px] text-slate-400 font-medium">
+                  {user 
+                    ? (language === 'en' ? `${voiceMessagesRemaining} voice messages remaining` : `Osigazza ebibuuzo by'eddoboozi ${voiceMessagesRemaining}`)
+                    : (language === 'en' ? 'Sign in to use voice features' : 'Yingira okukozesa eddoboozi')}
+                </p>
+              </div>
             )}
             {isPro && (
               <p className="text-[10px] text-center text-amber-600 mt-3 font-bold uppercase tracking-widest">
