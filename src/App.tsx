@@ -143,6 +143,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [isEmailVerifying, setIsEmailVerifying] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [autoTalkBack, setAutoTalkBack] = useState(true);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -353,9 +355,9 @@ export default function App() {
       
       const response = await ttsAi.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say this clearly: ${text}` }] }],
+        contents: [{ parts: [{ text: text }] }],
         config: { 
-          responseModalities: ["AUDIO" as any], 
+          responseModalities: [Modality.AUDIO], 
           speechConfig: { 
             voiceConfig: { 
               prebuiltVoiceConfig: { voiceName: 'Kore' } 
@@ -394,16 +396,20 @@ export default function App() {
     } catch (error: any) { 
       console.error("TTS Error:", error);
       
-      // Friendly Quota Error
+      let errorMsg = "";
       if (error?.message?.includes("429") || error?.message?.includes("quota")) {
-        alert(language === 'en' 
-          ? "📢 You've reached your daily limit (10) for voice messages. Please try again tomorrow or upgrade your plan." 
-          : "📢 Okozesezza nnyo eddoboozi lya Oracle leero (10). Gezaako enkya oba kyusaamu mu nteekateeka yo.");
+        errorMsg = language === 'en' 
+          ? "📢 Voice limit reached for now. You can still read the text below!" 
+          : "📢 Eddoboozi liwummuddeko. Kyokka okyasobola okusoma obubaka wansi!";
+        setAutoTalkBack(false); // Turn off auto-talk to stop further errors
       } else {
-        alert(language === 'en' 
-          ? `Oracle Voice Error: ${error.message || 'Unknown error'}` 
-          : `Obuzibu mu ddoboozi: ${error.message || 'Obuzibu obutamanyiddwa'}`);
+        errorMsg = language === 'en' 
+          ? "📢 Voice service is temporarily unavailable." 
+          : "📢 Eddoboozi terisobola kukola kati.";
       }
+      
+      setVoiceError(errorMsg);
+      setTimeout(() => setVoiceError(null), 5000);
     } finally {
       setIsAudioLoading(null);
     }
@@ -544,7 +550,10 @@ export default function App() {
       });
       const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
       updateSessionMessages([...updatedMessages, assistantMessage]);
-      speakText(assistantMessage.content, assistantMessage.id);
+      
+      if (autoTalkBack) {
+        speakText(assistantMessage.content, assistantMessage.id);
+      }
       
       if (user) {
         const userRef = doc(db, 'users', user.uid);
@@ -618,6 +627,18 @@ export default function App() {
             <History size={16} />
           </button>
           <button 
+            onClick={() => setAutoTalkBack(!autoTalkBack)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-sm font-medium", 
+              autoTalkBack ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            )}
+            title={language === 'en' ? 'Auto Talk Back' : 'Okuddamu mu ddoboozi'}
+          >
+            {autoTalkBack ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            <span className="hidden sm:inline">{language === 'en' ? 'Talk Back' : 'Doboozi'}</span>
+          </button>
+
+          <button 
             onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
             className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-medium"
           >
@@ -656,6 +677,20 @@ export default function App() {
       </nav>
 
       <main className="pt-20 pb-32 max-w-4xl mx-auto px-4 relative">
+        <AnimatePresence>
+          {voiceError && (
+            <motion.div 
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
+              className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700"
+            >
+              <VolumeX size={18} className="text-amber-400" />
+              <span className="text-sm font-medium">{voiceError}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* History Sidebar/Overlay */}
         <AnimatePresence>
           {showHistory && (
