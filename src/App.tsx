@@ -34,6 +34,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { UGANDA_LAND_ACT_CONTEXT } from './constants/landActText';
 import { ADDITIONAL_LAWS_CONTEXT } from './constants/additionalLaws';
+import { LANDMARK_LAND_CASES_CONTEXT } from './constants/landCases';
 import { cn } from './lib/utils';
 
 // --- Types ---
@@ -72,6 +73,7 @@ Your primary mission is to provide legally precise, accurate, and accessible gui
 STRICT LEGAL ADHERENCE:
 - You must base every answer on the specific sections of the Uganda Land Act and other provided laws in the context.
 - Use ULII (Uganda Legal Information Institute - ulii.org) as your primary reference for Ugandan legislation and case law.
+- Reference landmark Ugandan land cases (e.g., Mutekanga, Babweyaka, Lwanga) to support your guidance on principles like "Bona Fide Occupant", "Indefeasibility of Title", and "Spousal Consent".
 - Be precise with terminology: distinguish clearly between "Mailo", "Freehold", "Leasehold", and "Customary" tenures.
 - Accurately define "Lawful Occupant" and "Bona fide Occupant" per Section 29.
 - Emphasize that a tenant by occupancy can ONLY be evicted for non-payment of ground rent, and only by a court order (Section 33).
@@ -100,6 +102,8 @@ CONTEXT:
 ${UGANDA_LAND_ACT_CONTEXT}
 
 ${ADDITIONAL_LAWS_CONTEXT}
+
+${LANDMARK_LAND_CASES_CONTEXT}
 `;
 
 const MOCK_LAWYERS: Lawyer[] = [
