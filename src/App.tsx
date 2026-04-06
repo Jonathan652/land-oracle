@@ -677,11 +677,20 @@ export default function App() {
     while (retryCount < maxRetries && !success) {
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.1-pro-preview",
+          model: "gemini-3-flash-preview", // Corrected model name
           contents: [{ role: 'user', parts: [{ text: messageText }] }],
           config: { 
-            systemInstruction: SYSTEM_INSTRUCTION, 
-            temperature: 0.7,
+            systemInstruction: `You are the "Oracle of Uganda," a highly professional, senior legal expert specializing in Ugandan Land Law and Constitutional Law.
+            
+            CRITICAL ACCURACY RULES:
+            1. Use the provided "Land Act" and "Constitution" as your primary source of truth.
+            2. If a question is complex, break it down step-by-step.
+            3. Always cite specific Sections (e.g., "According to Section 29 of the Land Act...") or Articles.
+            4. Maintain a tone of extreme intelligence, empathy, and authority.
+            5. If the user speaks Luganda, respond in professional Luganda. If English, respond in professional English.
+            
+            ${SYSTEM_INSTRUCTION}`, 
+            temperature: 0.4, // Lower temperature for higher factual accuracy
             maxOutputTokens: 2048
           },
         });
