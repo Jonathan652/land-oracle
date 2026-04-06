@@ -455,53 +455,74 @@ export default function App() {
       const updatedMessages = [...messages, userMessage];
       updateSessionMessages(updatedMessages);
 
-      try {
-        const assistantMessageId = (Date.now() + 1).toString();
-        const assistantMessage: Message = {
-          id: assistantMessageId,
-          role: 'assistant',
-          content: "",
-          timestamp: new Date(),
-        };
-        
-        if (isStreamingMode) {
-          const stream = await ai.models.generateContentStream({
-            model: "gemini-3-flash-preview",
-            contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
-            config: { 
-              systemInstruction: isDocumentMode ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` : SYSTEM_INSTRUCTION, 
-              temperature: 0.7 
-            },
-          });
+    try {
+      const assistantMessageId = (Date.now() + 1).toString();
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: "",
+        timestamp: new Date(),
+      };
+      
+      // ADD MESSAGE TO UI BEFORE STREAMING
+      const messagesWithPlaceholder = [...updatedMessages, assistantMessage];
+      updateSessionMessages(messagesWithPlaceholder);
 
-          let fullText = "";
-          for await (const chunk of stream) {
-            fullText += chunk.text;
-            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+      const systemPrompt = `You are the "Oracle of Uganda," a highly professional, senior legal expert specializing in the Constitution and Laws of Uganda.
+      
+      CRITICAL ACCURACY RULES:
+      1. Use the "Constitution" and all provided laws as your primary source of truth.
+      2. If a question is complex, break it down step-by-step.
+      3. Always cite specific Articles (e.g., "According to Article 21 of the Constitution...") or Sections.
+      4. Maintain a tone of extreme intelligence, empathy, and authority.
+      5. If the user speaks Luganda, respond in professional Luganda. If English, respond in professional English.
+      
+      ${isDocumentMode ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` : SYSTEM_INSTRUCTION}`;
+
+      if (isStreamingMode) {
+        const stream = await ai.models.generateContentStream({
+          model: "gemini-3-flash-preview",
+          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
+          config: { 
+            systemInstruction: systemPrompt, 
+            temperature: 0.4 
+          },
+        });
+
+        let fullText = "";
+        for await (const chunk of stream) {
+          fullText += chunk.text;
+          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+          
+          // Smoother scrolling: only scroll if we're already near the bottom
+          const container = document.documentElement;
+          const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+          if (isNearBottom) {
             scrollToBottom();
           }
-          
-          assistantMessage.content = fullText;
-          updateSessionMessages([...updatedMessages, assistantMessage]);
-          setStreamingContent(prev => {
-            const next = { ...prev };
-            delete next[assistantMessageId];
-            return next;
-          });
-          speakText(fullText, assistantMessageId);
-        } else {
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
-            config: { 
-              systemInstruction: isDocumentMode ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` : SYSTEM_INSTRUCTION, 
-              temperature: 0.7 
-            },
-          });
-          assistantMessage.content = response.text || "I apologize.";
-          updateSessionMessages([...updatedMessages, assistantMessage]);
-          speakText(assistantMessage.content, assistantMessageId);
         }
+        
+        assistantMessage.content = fullText;
+        updateSessionMessages([...updatedMessages, assistantMessage]);
+        setStreamingContent(prev => {
+          const next = { ...prev };
+          delete next[assistantMessageId];
+          return next;
+        });
+        speakText(fullText, assistantMessageId);
+      } else {
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
+          config: { 
+            systemInstruction: systemPrompt, 
+            temperature: 0.4 
+          },
+        });
+        assistantMessage.content = response.text || "I apologize.";
+        updateSessionMessages([...updatedMessages, assistantMessage]);
+        speakText(assistantMessage.content, assistantMessageId);
+      }
         
         if (user) {
           const userRef = doc(db, 'users', user.uid);
@@ -837,9 +858,20 @@ export default function App() {
         timestamp: new Date(),
       };
 
-      const systemPrompt = isDocumentMode 
-        ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.`
-        : SYSTEM_INSTRUCTION;
+      // ADD MESSAGE TO UI BEFORE STREAMING
+      const messagesWithPlaceholder = [...updatedMessages, assistantMessage];
+      updateSessionMessages(messagesWithPlaceholder);
+
+      const systemPrompt = `You are the "Oracle of Uganda," a highly professional, senior legal expert specializing in the Constitution and Laws of Uganda.
+      
+      CRITICAL ACCURACY RULES:
+      1. Use the "Constitution" and all provided laws as your primary source of truth.
+      2. If a question is complex, break it down step-by-step.
+      3. Always cite specific Articles (e.g., "According to Article 21 of the Constitution...") or Sections.
+      4. Maintain a tone of extreme intelligence, empathy, and authority.
+      5. If the user speaks Luganda, respond in professional Luganda. If English, respond in professional English.
+      
+      ${isDocumentMode ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` : SYSTEM_INSTRUCTION}`;
 
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
@@ -856,7 +888,13 @@ export default function App() {
         for await (const chunk of stream) {
           fullText += chunk.text;
           setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-          scrollToBottom();
+          
+          // Smoother scrolling: only scroll if we're already near the bottom
+          const container = document.documentElement;
+          const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+          if (isNearBottom) {
+            scrollToBottom();
+          }
         }
         
         assistantMessage.content = fullText;
