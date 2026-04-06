@@ -182,7 +182,7 @@ export default function App() {
     
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
-    doc.text('Premium Legal Guidance Report', margin, 30);
+    doc.text('Oracle Legal Guidance Report', margin, 30);
 
     // Date
     doc.setTextColor(100, 116, 139); // Slate 500
@@ -371,16 +371,34 @@ export default function App() {
       updateSessionMessages(updatedMessages);
 
       try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
-          config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.7 },
-        });
+        const maxRetries = 3;
+        let retryCount = 0;
+        let success = false;
+        let response;
+
+        while (retryCount < maxRetries && !success) {
+          try {
+            response = await ai.models.generateContent({
+              model: "gemini-3-flash-preview",
+              contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
+              config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.7 },
+            });
+            success = true;
+          } catch (error: any) {
+            const isRateLimit = error?.message?.includes("quota") || error?.message?.includes("429");
+            if (isRateLimit && retryCount < maxRetries - 1) {
+              retryCount++;
+              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+              continue;
+            }
+            throw error;
+          }
+        }
 
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: response.text || "I apologize, I couldn't process that request.",
+          content: response?.text || "I apologize, I couldn't process that request.",
           timestamp: new Date(),
         };
         const finalMessages = [...updatedMessages, assistantMessage];
@@ -421,8 +439,8 @@ export default function App() {
       return;
     }
 
-    // 2. Check if Pro or has remaining messages
-    if (!isPro && voiceMessagesRemaining <= 0) {
+    // 2. Check if Pro or has remaining messages (Bypassed for testing)
+    if (false && !isPro && voiceMessagesRemaining <= 0) {
       setVoiceError(language === 'en' ? "Voice limit reached. Upgrade to Premium for unlimited voice!" : "Okozesezza ebibuuzo by'eddoboozi byonna. Kyusaamu okufuna ebisingawo!");
       return;
     }
@@ -641,23 +659,6 @@ export default function App() {
     const messageText = textOverride || input;
     if (!messageText.trim() || isLoading) return;
     
-    if (!isPro && freeQuestionsRemaining <= 0) {
-      if (!user) {
-        setShowAuthModal(true);
-      } else {
-        const assistantLimitMessage: Message = { 
-          id: Date.now().toString(), 
-          role: 'assistant', 
-          content: language === 'en' 
-            ? "You've reached your daily limit of 2 free questions. Please upgrade to Oracle Pro for unlimited access and priority support." 
-            : "Owezezza ekigero ky'olunaku eky'ebibuuzo 2 eby'obwereere. Funa Oracle Pro okufuna obuyambi obutaliiko kkomo n'obuyambi obw'enjawulo.", 
-          timestamp: new Date() 
-        };
-        updateSessionMessages([...messages, assistantLimitMessage]);
-      }
-      return;
-    }
-
     // Mobile Audio Unlock: Resume context immediately on user click
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
@@ -668,49 +669,69 @@ export default function App() {
     
     if (!textOverride) setInput('');
     setIsLoading(true);
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: [{ role: 'user', parts: [{ text: messageText }] }],
-        config: { 
-          systemInstruction: SYSTEM_INSTRUCTION, 
-          temperature: 0.7,
-          maxOutputTokens: 2048
-        },
-      });
-      const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
-      updateSessionMessages([...updatedMessages, assistantMessage]);
-      
-      if (autoTalkBack && (isPro || voiceMessagesRemaining > 0)) {
-        speakText(assistantMessage.content, assistantMessage.id);
-      }
-      
-      if (user && !isPro) {
-        const userRef = doc(db, 'users', user.uid);
-        try {
-          const userSnap = await getDoc(userRef);
-          const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
-          await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
-          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
-        } catch (error) {
-          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+
+    const maxRetries = 3;
+    let retryCount = 0;
+    let success = false;
+
+    while (retryCount < maxRetries && !success) {
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-pro-preview",
+          contents: [{ role: 'user', parts: [{ text: messageText }] }],
+          config: { 
+            systemInstruction: SYSTEM_INSTRUCTION, 
+            temperature: 0.7,
+            maxOutputTokens: 2048
+          },
+        });
+        const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
+        updateSessionMessages([...updatedMessages, assistantMessage]);
+        
+        if (autoTalkBack) {
+          speakText(assistantMessage.content, assistantMessage.id);
         }
-      } else if (!user) {
-        setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        
+        if (user && !isPro) {
+          const userRef = doc(db, 'users', user.uid);
+          try {
+            const userSnap = await getDoc(userRef);
+            const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
+            await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
+            setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          }
+        } else if (!user) {
+          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        }
+        success = true;
+      } catch (error: any) {
+        console.error(`Oracle Error (Attempt ${retryCount + 1}):`, error);
+        
+        const isRateLimit = error?.message?.includes("quota") || error?.message?.includes("429");
+        
+        if (isRateLimit && retryCount < maxRetries - 1) {
+          retryCount++;
+          // Wait for 2s, 4s, 8s
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          continue;
+        }
+
+        let errorMessage = "Nfuna obuzibu mu kukuddamu.";
+        if (error?.message?.includes("API_KEY_INVALID")) {
+          errorMessage = "Oracle settings tezikola. Genda mu Settings okyusemu.";
+        } else if (isRateLimit) {
+          errorMessage = language === 'en' 
+            ? "Oracle is currently busy due to high demand. Please try again in a few seconds."
+            : "Oracle ali mu kaseera k'obubake nnyo. Gezaako mu ddakiika ntono.";
+        }
+        const assistantError: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() };
+        updateSessionMessages([...updatedMessages, assistantError]);
+        success = true; // Stop retrying on non-rate-limit errors or final attempt
       }
-    } catch (error: any) {
-      console.error("Oracle Error Details:", error);
-      let errorMessage = "Nfuna obuzibu mu kukuddamu.";
-      if (error?.message?.includes("API_KEY_INVALID")) {
-        errorMessage = "Oracle settings tezikola. Genda mu Settings okyusemu.";
-      } else if (error?.message?.includes("quota")) {
-        errorMessage = language === 'en' 
-          ? "Oracle is currently busy due to high demand. Please try again in a few minutes or upgrade to Pro for priority access."
-          : "Oracle ali mu kaseera k'obubake nnyo. Gezaako mu ddakiika ntono oba funa Oracle Pro okufuna obuyambi amangu.";
-      }
-      const assistantError: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() };
-      updateSessionMessages([...updatedMessages, assistantError]);
-    } finally { setIsLoading(false); }
+    }
+    setIsLoading(false);
   };
 
   const quickQuestions = [
@@ -896,7 +917,7 @@ export default function App() {
                     {language === 'en' ? 'Welcome to the Uganda Law Oracle' : 'Sanyuka okujja eri Oracle w\'amateeka mu Uganda'}
                   </h2>
                   <p className="text-lg text-slate-600 max-w-xl mx-auto">
-                    {language === 'en' ? 'Ask any question about the Constitution of Uganda or Land Act in Luganda or English.' : 'Buuza ekibuuzo kyonna ku Ssemateeka wa Uganda oba amateeka g\'ettaka mu Luganda oba mu Lungereza.'}
+                    {language === 'en' ? 'Ask any question about the Constitution and Laws of Uganda in Luganda or English.' : 'Buuza ekibuuzo kyonna ku Ssemateeka n\'amateeka ga Uganda mu Luganda oba mu Lungereza.'}
                   </p>
                 </motion.div>
 
@@ -908,18 +929,18 @@ export default function App() {
                       animate={{ opacity: 1, scale: 1 }} 
                       transition={{ delay: i * 0.1 }} 
                       onClick={() => handleQuickQuestion(language === 'en' ? q.en : q.lg)} 
-                      className="w-full p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-50 transition-all group flex flex-col justify-between min-h-[140px]"
+                      className="w-full p-5 sm:p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-50 transition-all group flex flex-col justify-between min-h-[130px] sm:min-h-[140px]"
                     >
-                      <div className="flex justify-between items-start mb-4 w-full">
-                        <div className="p-3 bg-amber-50 rounded-xl text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
-                          {i === 0 && <ShieldCheck size={24} />}
-                          {i === 1 && <User size={24} />}
-                          {i === 2 && <Map size={24} />}
-                          {i === 3 && <Gavel size={24} />}
+                      <div className="flex justify-between items-start mb-3 sm:mb-4 w-full">
+                        <div className="p-2.5 sm:p-3 bg-amber-50 rounded-xl text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
+                          {i === 0 && <ShieldCheck size={20} className="sm:w-6 sm:h-6" />}
+                          {i === 1 && <User size={20} className="sm:w-6 sm:h-6" />}
+                          {i === 2 && <Map size={20} className="sm:w-6 sm:h-6" />}
+                          {i === 3 && <Gavel size={20} className="sm:w-6 sm:h-6" />}
                         </div>
-                        <ChevronRight size={20} className="text-slate-300 group-hover:text-amber-500 transition-colors" />
+                        <ChevronRight size={18} className="text-slate-300 group-hover:text-amber-500 transition-colors sm:w-5 sm:h-5" />
                       </div>
-                      <p className="font-bold text-slate-800 text-base leading-snug">{language === 'en' ? q.en : q.lg}</p>
+                      <p className="font-bold text-slate-800 text-sm sm:text-base leading-snug">{language === 'en' ? q.en : q.lg}</p>
                     </motion.button>
                   ))}
                 </div>
@@ -955,7 +976,7 @@ export default function App() {
                                 setShowAuthModal(true);
                                 return;
                               }
-                              if (!isPro && premiumReportsCount >= 2) {
+                              if (false && !isPro && premiumReportsCount >= 2) {
                                 alert(language === 'en' 
                                   ? 'You have reached the limit of 2 premium reports for free users. Please upgrade to Pro for unlimited reports.' 
                                   : 'Owezezza lipoota 2 eza premium ez\'obwereere. Funa Oracle Pro okufuna lipoota ezirala zonna.');
@@ -976,7 +997,7 @@ export default function App() {
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"
                           >
                             <Download size={14} />
-                            {language === 'en' ? 'Premium Report' : 'Lipoota ey\'enjawulo'}
+                            {language === 'en' ? 'Oracle Report' : 'Lipoota ya Oracle'}
                           </button>
                           <button 
                             onClick={() => setActiveTab('services')}
@@ -1039,7 +1060,7 @@ export default function App() {
             <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white relative overflow-hidden">
               <div className="relative z-10 space-y-6">
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-amber-600 rounded-full text-xs font-bold uppercase tracking-widest">
-                  Premium Feature
+                  Oracle Feature
                 </div>
                 <h3 className="text-3xl font-bold leading-tight">
                   {language === 'en' ? 'Official Legal Summary Report' : 'Lipoota y\'amateeka ey\'ekikugu'}
@@ -1049,9 +1070,12 @@ export default function App() {
                     ? 'Generate a certified summary of your rights based on your specific situation. Perfect for presentation to Local Councils, Police, or Mediators.' 
                     : 'Funa lipoota ekakasiddwa ku ddembe lyo okusinziira ku mbeera yo. Ennungi nnyo okutwala mu LC, Poliisi, oba eri abatuula mu nkayana.'}
                 </p>
-                <button className="flex items-center gap-3 px-8 py-4 bg-white text-slate-900 rounded-2xl font-bold hover:bg-slate-100 transition-all">
+                <button 
+                  onClick={() => setActiveTab('chat')}
+                  className="flex items-center gap-3 px-8 py-4 bg-white text-slate-900 rounded-2xl font-bold hover:bg-slate-100 transition-all"
+                >
                   <FileText size={20} />
-                  {language === 'en' ? 'Generate Report (UGX 5,000)' : 'Funa Lipoota (UGX 5,000)'}
+                  {language === 'en' ? 'Generate Free Report' : 'Funa Lipoota ey\'obwereere'}
                 </button>
               </div>
               <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-amber-600/20 rounded-full blur-3xl" />
@@ -1078,7 +1102,7 @@ export default function App() {
       {activeTab === 'chat' && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#FDFCF8] via-[#FDFCF8] to-transparent">
           <div className="max-w-4xl mx-auto relative">
-            {!isPro && freeQuestionsRemaining <= 0 ? (
+            {false && !isPro && freeQuestionsRemaining <= 0 ? (
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1112,12 +1136,12 @@ export default function App() {
                   {isRecording ? <Square size={20} /> : <Mic size={20} />}
                   {isRecording && <motion.div initial={{ scale: 0 }} animate={{ scale: 2 }} className="absolute inset-0 bg-red-400/20 rounded-full" />}
                 </button>
-                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={language === 'en' ? "Ask about land rights..." : "Buuza ku tteeka..."} className="flex-1 bg-transparent border-none focus:ring-0 px-4 py-3 text-slate-800" />
+                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={language === 'en' ? "Ask about the laws of Uganda..." : "Buuza ku mateeka ga Uganda..."} className="flex-1 bg-transparent border-none focus:ring-0 px-4 py-3 text-slate-800" />
                 <button onClick={() => handleSend()} disabled={!input.trim() || isLoading} className="w-12 h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"><Send size={20} /></button>
               </div>
             )}
             
-            {!isPro && (
+            {false && !isPro && (
               <div className="flex flex-col items-center gap-1 mt-3">
                 <p className="text-[10px] text-slate-400 font-medium">
                   {language === 'en' 
@@ -1131,11 +1155,9 @@ export default function App() {
                 </p>
               </div>
             )}
-            {isPro && (
-              <p className="text-[10px] text-center text-amber-600 mt-3 font-bold uppercase tracking-widest">
-                Oracle Pro Active • Unlimited Access
-              </p>
-            )}
+            <p className="text-[10px] text-center text-amber-600 mt-3 font-bold uppercase tracking-widest">
+              Oracle Beta • Unlimited Access Enabled
+            </p>
             <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">
               {language === 'en' 
                 ? 'Developed by Jonathan Musiime • Based on the Constitution and Laws of Uganda' 
