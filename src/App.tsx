@@ -229,7 +229,8 @@ export default function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const isSpeakingCancelledRef = useRef(false);
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
   const messages = currentSession?.messages || [];
@@ -439,12 +440,6 @@ export default function App() {
       return;
     }
 
-    // 2. Check if Pro or has remaining messages (Bypassed for testing)
-    if (false && !isPro && voiceMessagesRemaining <= 0) {
-      setVoiceError(language === 'en' ? "Voice limit reached. Upgrade to Premium for unlimited voice!" : "Okozesezza ebibuuzo by'eddoboozi byonna. Kyusaamu okufuna ebisingawo!");
-      return;
-    }
-
     // Ensure AudioContext is initialized/resumed
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -455,6 +450,7 @@ export default function App() {
     }
 
     stopSpeaking(); // Stop any current playback
+    isSpeakingCancelledRef.current = false;
 
     // 1. Check Cache First
     if (audioCache[messageId]) {
@@ -467,9 +463,27 @@ export default function App() {
     try {
       const ttsAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       
-      const response = await ttsAi.models.generateContent({
+      // Clean text for better TTS performance and quality
+      const cleanedText = text
+        .replace(/#{1,6}\s?/g, '')
+        .replace(/\*\*/g, '')
+        .replace(/\*/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/`{1,3}[^`]*`{1,3}/g, '')
+        .replace(/>\s?/g, '')
+        .replace(/[-+*]\s/g, '')
+        .replace(/\n\s*\n/g, '. ') // Double newlines to sentence breaks
+        .replace(/\n/g, ' ')
+        .trim();
+
+      if (!cleanedText) {
+        setIsAudioLoading(null);
+        return;
+      }
+
+      const response = await ttsAi.models.generateContentStream({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: text }] }],
+        contents: [{ parts: [{ text: cleanedText }] }],
         config: { 
           responseModalities: [Modality.AUDIO], 
           speechConfig: { 
@@ -480,45 +494,89 @@ export default function App() {
         },
       });
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const binaryString = atob(base64Audio);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
+      let nextStartTime = audioContextRef.current.currentTime + 0.1;
+      const accumulatedSamples: Float32Array[] = [];
+      let totalSamplesCount = 0;
+      let hasStarted = false;
 
-        const dataView = new DataView(bytes.buffer);
-        const numSamples = Math.floor(len / 2);
-        const float32 = new Float32Array(numSamples);
+      for await (const chunk of response) {
+        if (isSpeakingCancelledRef.current) break;
         
-        for (let i = 0; i < numSamples; i++) {
-          float32[i] = dataView.getInt16(i * 2, true) / 32768;
-        }
+        const parts = chunk.candidates?.[0]?.content?.parts;
+        if (!parts) continue;
 
-        const audioBuffer = audioContextRef.current!.createBuffer(1, float32.length, 24000);
-        audioBuffer.getChannelData(0).set(float32);
-        
-        // Save to cache
-        setAudioCache(prev => ({ ...prev, [messageId]: audioBuffer }));
-        
-        playFromBuffer(audioBuffer, messageId);
+        for (const part of parts) {
+          if (part.inlineData?.data) {
+            const base64Audio = part.inlineData.data;
+            const binaryString = atob(base64Audio);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
 
-        // 3. Increment usage in Firestore if not Pro
-        if (!isPro) {
-          const userRef = doc(db, 'users', user.uid);
-          try {
-            const userSnap = await getDoc(userRef);
-            const currentUsed = userSnap.exists() ? (userSnap.data().voiceMessagesUsed || 0) : 0;
-            await updateDoc(userRef, { voiceMessagesUsed: currentUsed + 1 });
-            setVoiceMessagesRemaining(prev => Math.max(0, prev - 1));
-          } catch (error) {
-            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+            const dataView = new DataView(bytes.buffer);
+            const numSamples = Math.floor(len / 2);
+            const float32 = new Float32Array(numSamples);
+            
+            for (let i = 0; i < numSamples; i++) {
+              float32[i] = dataView.getInt16(i * 2, true) / 32768;
+            }
+
+            accumulatedSamples.push(float32);
+            totalSamplesCount += numSamples;
+
+            const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 24000);
+            audioBuffer.getChannelData(0).set(float32);
+            
+            const source = audioContextRef.current.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContextRef.current.destination);
+            
+            activeSourcesRef.current.push(source);
+            
+            const startTime = Math.max(nextStartTime, audioContextRef.current.currentTime);
+            source.start(startTime);
+            nextStartTime = startTime + audioBuffer.duration;
+
+            if (!hasStarted) {
+              setIsSpeaking(messageId);
+              setIsAudioLoading(null);
+              hasStarted = true;
+            }
+
+            source.onended = () => {
+              activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
+              if (activeSourcesRef.current.length === 0 && !isSpeakingCancelledRef.current) {
+                setIsSpeaking(null);
+              }
+            };
           }
         }
-      } else {
-        throw new Error("No audio data received.");
+      }
+
+      if (totalSamplesCount > 0 && !isSpeakingCancelledRef.current) {
+        const finalBuffer = audioContextRef.current.createBuffer(1, totalSamplesCount, 24000);
+        const channelData = finalBuffer.getChannelData(0);
+        let offset = 0;
+        for (const samples of accumulatedSamples) {
+          channelData.set(samples, offset);
+          offset += samples.length;
+        }
+        setAudioCache(prev => ({ ...prev, [messageId]: finalBuffer }));
+      }
+
+      // 3. Increment usage in Firestore if not Pro
+      if (hasStarted && !isPro) {
+        const userRef = doc(db, 'users', user.uid);
+        try {
+          const userSnap = await getDoc(userRef);
+          const currentUsed = userSnap.exists() ? (userSnap.data().voiceMessagesUsed || 0) : 0;
+          await updateDoc(userRef, { voiceMessagesUsed: currentUsed + 1 });
+          setVoiceMessagesRemaining(prev => Math.max(0, prev - 1));
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+        }
       }
     } catch (error: any) { 
       console.error("TTS Error:", error);
@@ -528,7 +586,7 @@ export default function App() {
         errorMsg = language === 'en' 
           ? "📢 Voice limit reached for now. You can still read the text below!" 
           : "📢 Eddoboozi liwummuddeko. Kyokka okyasobola okusoma obubaka wansi!";
-        setAutoTalkBack(false); // Turn off auto-talk to stop further errors
+        setAutoTalkBack(false);
       } else {
         errorMsg = language === 'en' 
           ? "📢 Voice service is temporarily unavailable." 
@@ -549,20 +607,22 @@ export default function App() {
     source.buffer = buffer;
     source.connect(audioContextRef.current.destination);
     source.onended = () => {
-      if (isSpeaking === messageId) setIsSpeaking(null);
+      activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
+      if (activeSourcesRef.current.length === 0) setIsSpeaking(null);
     };
-    currentSourceRef.current = source;
+    activeSourcesRef.current.push(source);
     setIsSpeaking(messageId);
     source.start(0);
   };
 
   const stopSpeaking = () => {
-    if (currentSourceRef.current) {
+    isSpeakingCancelledRef.current = true;
+    activeSourcesRef.current.forEach(source => {
       try {
-        currentSourceRef.current.stop();
+        source.stop();
       } catch (e) {}
-      currentSourceRef.current = null;
-    }
+    });
+    activeSourcesRef.current = [];
     setIsSpeaking(null);
   };
 
