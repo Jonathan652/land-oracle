@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { jsPDF } from 'jspdf';
 import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -94,7 +95,7 @@ PROFESSIONAL GUIDANCE:
 
 TONE:
 - Authoritative, expert, yet empathetic and accessible to the common person.
-- Use structured responses with clear headings and bullet points.
+- Use structured responses with clear headings, bullet points, and **TABLES** for comparisons or structured data.
 - Avoid generic advice; be specific to the laws of Uganda.
 
 CONTEXT:
@@ -1023,8 +1024,8 @@ export default function App() {
                       {m.role === 'user' ? <User size={20} /> : <Bot size={20} />}
                     </div>
                     <div className={cn("max-w-[85%] rounded-3xl p-5 shadow-sm relative group", m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800")}>
-                      <div className="prose prose-slate prose-sm max-w-none dark:prose-invert">
-                        <Markdown>{m.content}</Markdown>
+                      <div className="markdown-body prose prose-slate prose-sm max-w-none dark:prose-invert">
+                        <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
                       </div>
                       
                       {m.role === 'assistant' && (
