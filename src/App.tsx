@@ -31,6 +31,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { jsPDF } from 'jspdf';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
+import { saveAs } from 'file-saver';
 import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -166,7 +168,17 @@ export default function App() {
     return saved ? parseInt(saved, 10) : 0;
   });
 
-  const generatePDF = (content: string) => {
+  // New Features State
+  const [isStreamingMode, setIsStreamingMode] = useState(true);
+  const [streamingSpeed, setStreamingSpeed] = useState(30); // ms per character
+  const [isDocumentMode, setIsDocumentMode] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [isHoldingToRecord, setIsHoldingToRecord] = useState(false);
+  const [audioPreview, setAudioPreview] = useState<string | null>(null);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [streamingContent, setStreamingContent] = useState<Record<string, string>>({});
+
+  const generatePDF = (content: string, type: string = 'Report', style: string = 'Formal') => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 20;
@@ -223,7 +235,49 @@ export default function App() {
     const splitDisclaimer = doc.splitTextToSize(disclaimer, maxWidth);
     doc.text(splitDisclaimer, margin, pageHeight - 20);
 
-    doc.save(`Uganda_Law_Oracle_Report_${new Date().getTime()}.pdf`);
+    doc.save(`Uganda_Law_Oracle_${type}_${new Date().getTime()}.pdf`);
+  };
+
+  const generateDOCX = async (content: string, type: string = 'Report', style: string = 'Formal') => {
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            text: "Uganda Law Oracle",
+            heading: HeadingLevel.HEADING_1,
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            text: `${type} - ${style} Style`,
+            heading: HeadingLevel.HEADING_2,
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            text: `Generated on: ${new Date().toLocaleDateString()}`,
+            alignment: AlignmentType.RIGHT,
+          }),
+          new Paragraph({ text: "" }),
+          ...content.split('\n').map(line => new Paragraph({
+            children: [new TextRun(line.replace(/[#*`]/g, ''))],
+            spacing: { before: 200 },
+          })),
+          new Paragraph({ text: "" }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: "Disclaimer: For guidance only—not legal advice. Consult a lawyer for specific cases.",
+                italics: true,
+                size: 16,
+              }),
+            ],
+          }),
+        ],
+      }],
+    });
+
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `Uganda_Law_Oracle_${type}_${new Date().getTime()}.docx`);
   };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -311,6 +365,8 @@ export default function App() {
   };
 
   // --- Recording Logic ---
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
   const startRecording = async () => {
     if (!isPro && freeQuestionsRemaining <= 0) return;
     try {
@@ -318,6 +374,11 @@ export default function App() {
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      setRecordingDuration(0);
+
+      timerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -327,7 +388,9 @@ export default function App() {
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await processAudioMessage(audioBlob);
+        setRecordedBlob(audioBlob);
+        setAudioPreview(URL.createObjectURL(audioBlob));
+        if (timerRef.current) clearInterval(timerRef.current);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -339,10 +402,30 @@ export default function App() {
     }
   };
 
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.onstop = null; // Don't process the blob
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setRecordingDuration(0);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    setRecordedBlob(null);
+    setAudioPreview(null);
+  };
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+    }
+  };
+
+  const sendRecordedAudio = async () => {
+    if (recordedBlob) {
+      await processAudioMessage(recordedBlob);
+      setRecordedBlob(null);
+      setAudioPreview(null);
     }
   };
 
@@ -373,39 +456,52 @@ export default function App() {
       updateSessionMessages(updatedMessages);
 
       try {
-        const maxRetries = 3;
-        let retryCount = 0;
-        let success = false;
-        let response;
-
-        while (retryCount < maxRetries && !success) {
-          try {
-            response = await ai.models.generateContent({
-              model: "gemini-3-flash-preview",
-              contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
-              config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.7 },
-            });
-            success = true;
-          } catch (error: any) {
-            const isRateLimit = error?.message?.includes("quota") || error?.message?.includes("429");
-            if (isRateLimit && retryCount < maxRetries - 1) {
-              retryCount++;
-              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-              continue;
-            }
-            throw error;
-          }
-        }
-
+        const assistantMessageId = (Date.now() + 1).toString();
         const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
+          id: assistantMessageId,
           role: 'assistant',
-          content: response?.text || "I apologize, I couldn't process that request.",
+          content: "",
           timestamp: new Date(),
         };
-        const finalMessages = [...updatedMessages, assistantMessage];
-        updateSessionMessages(finalMessages);
-        speakText(assistantMessage.content, assistantMessage.id);
+        
+        if (isStreamingMode) {
+          const stream = await ai.models.generateContentStream({
+            model: "gemini-3-flash-preview",
+            contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
+            config: { 
+              systemInstruction: isDocumentMode ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` : SYSTEM_INSTRUCTION, 
+              temperature: 0.7 
+            },
+          });
+
+          let fullText = "";
+          for await (const chunk of stream) {
+            fullText += chunk.text;
+            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+            scrollToBottom();
+          }
+          
+          assistantMessage.content = fullText;
+          updateSessionMessages([...updatedMessages, assistantMessage]);
+          setStreamingContent(prev => {
+            const next = { ...prev };
+            delete next[assistantMessageId];
+            return next;
+          });
+          speakText(fullText, assistantMessageId);
+        } else {
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
+            config: { 
+              systemInstruction: isDocumentMode ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` : SYSTEM_INSTRUCTION, 
+              temperature: 0.7 
+            },
+          });
+          assistantMessage.content = response.text || "I apologize.";
+          updateSessionMessages([...updatedMessages, assistantMessage]);
+          speakText(assistantMessage.content, assistantMessageId);
+        }
         
         if (user) {
           const userRef = doc(db, 'users', user.uid);
@@ -732,75 +828,84 @@ export default function App() {
     if (!textOverride) setInput('');
     setIsLoading(true);
 
-    const maxRetries = 3;
-    let retryCount = 0;
-    let success = false;
+    try {
+      const assistantMessageId = (Date.now() + 1).toString();
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: "",
+        timestamp: new Date(),
+      };
 
-    while (retryCount < maxRetries && !success) {
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview", // Corrected model name
+      const systemPrompt = isDocumentMode 
+        ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.`
+        : SYSTEM_INSTRUCTION;
+
+      if (isStreamingMode) {
+        const stream = await ai.models.generateContentStream({
+          model: "gemini-3-flash-preview",
           contents: [{ role: 'user', parts: [{ text: messageText }] }],
           config: { 
-            systemInstruction: `You are the "Oracle of Uganda," a highly professional, senior legal expert specializing in the Constitution and Laws of Uganda.
-            
-            CRITICAL ACCURACY RULES:
-            1. Use the "Constitution" and all provided laws as your primary source of truth.
-            2. If a question is complex, break it down step-by-step.
-            3. Always cite specific Articles (e.g., "According to Article 21 of the Constitution...") or Sections.
-            4. Maintain a tone of extreme intelligence, empathy, and authority.
-            5. If the user speaks Luganda, respond in professional Luganda. If English, respond in professional English.
-            
-            ${SYSTEM_INSTRUCTION}`, 
-            temperature: 0.4, // Lower temperature for higher factual accuracy
+            systemInstruction: systemPrompt,
+            temperature: 0.4,
             maxOutputTokens: 2048
           },
         });
-        const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.text || "I apologize.", timestamp: new Date() };
+
+        let fullText = "";
+        for await (const chunk of stream) {
+          fullText += chunk.text;
+          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+          scrollToBottom();
+        }
+        
+        assistantMessage.content = fullText;
+        updateSessionMessages([...updatedMessages, assistantMessage]);
+        setStreamingContent(prev => {
+          const next = { ...prev };
+          delete next[assistantMessageId];
+          return next;
+        });
+        
+        if (autoTalkBack) {
+          speakText(fullText, assistantMessageId);
+        }
+      } else {
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [{ role: 'user', parts: [{ text: messageText }] }],
+          config: { 
+            systemInstruction: systemPrompt,
+            temperature: 0.4,
+            maxOutputTokens: 2048
+          },
+        });
+        assistantMessage.content = response.text || "I apologize.";
         updateSessionMessages([...updatedMessages, assistantMessage]);
         
         if (autoTalkBack) {
-          speakText(assistantMessage.content, assistantMessage.id);
+          speakText(assistantMessage.content, assistantMessageId);
         }
-        
-        if (user && !isPro) {
-          const userRef = doc(db, 'users', user.uid);
-          try {
-            const userSnap = await getDoc(userRef);
-            const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
-            await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
-            setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
-          } catch (error) {
-            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-          }
-        } else if (!user) {
-          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
-        }
-        success = true;
-      } catch (error: any) {
-        console.error(`Oracle Error (Attempt ${retryCount + 1}):`, error);
-        
-        const isRateLimit = error?.message?.includes("quota") || error?.message?.includes("429");
-        
-        if (isRateLimit && retryCount < maxRetries - 1) {
-          retryCount++;
-          // Wait for 2s, 4s, 8s
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-          continue;
-        }
-
-        let errorMessage = "Nfuna obuzibu mu kukuddamu.";
-        if (error?.message?.includes("API_KEY_INVALID")) {
-          errorMessage = "Oracle settings tezikola. Genda mu Settings okyusemu.";
-        } else if (isRateLimit) {
-          errorMessage = language === 'en' 
-            ? "Oracle is currently busy due to high demand. Please try again in a few seconds."
-            : "Oracle ali mu kaseera k'obubake nnyo. Gezaako mu ddakiika ntono.";
-        }
-        const assistantError: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() };
-        updateSessionMessages([...updatedMessages, assistantError]);
-        success = true; // Stop retrying on non-rate-limit errors or final attempt
       }
+
+      if (user && !isPro) {
+        const userRef = doc(db, 'users', user.uid);
+        try {
+          const userSnap = await getDoc(userRef);
+          const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
+          await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
+          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+        }
+      } else if (!user) {
+        setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+      }
+    } catch (error: any) {
+      console.error(`Oracle Error:`, error);
+      const errorMessage = "Nfuna obuzibu mu kukuddamu.";
+      const assistantError: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() };
+      updateSessionMessages([...updatedMessages, assistantError]);
     }
     setIsLoading(false);
   };
@@ -869,6 +974,25 @@ export default function App() {
             <Languages size={16} />
             <span className="hidden sm:inline">{language === 'en' ? 'English' : 'Luganda'}</span>
           </button>
+
+          <div className="hidden lg:flex items-center gap-2 border-l border-slate-200 pl-4 ml-2">
+            <button 
+              onClick={() => setIsStreamingMode(!isStreamingMode)}
+              className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-xs font-bold uppercase tracking-wider", isStreamingMode ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500")}
+              title="Toggle Streaming Mode"
+            >
+              <Smartphone size={14} />
+              <span>{isStreamingMode ? 'Streaming' : 'Instant'}</span>
+            </button>
+            <button 
+              onClick={() => setIsDocumentMode(!isDocumentMode)}
+              className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-xs font-bold uppercase tracking-wider", isDocumentMode ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-500")}
+              title="Toggle Document Mode"
+            >
+              <FileText size={14} />
+              <span>{isDocumentMode ? 'Doc Mode' : 'Chat Mode'}</span>
+            </button>
+          </div>
 
           {user ? (
             <div className="flex items-center gap-2">
@@ -1025,11 +1149,13 @@ export default function App() {
                     </div>
                     <div className={cn("max-w-[85%] rounded-3xl p-5 shadow-sm relative group", m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800")}>
                       <div className="markdown-body prose prose-slate prose-sm max-w-none dark:prose-invert">
-                        <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+                        <Markdown remarkPlugins={[remarkGfm]}>
+                          {streamingContent[m.id] || m.content}
+                        </Markdown>
                       </div>
                       
-                      {m.role === 'assistant' && (
-                        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
+                      {m.role === 'assistant' && !streamingContent[m.id] && (
+                        <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-slate-100">
                           <button 
                             onClick={() => speakText(m.content, m.id)} 
                             disabled={isAudioLoading === m.id}
@@ -1041,41 +1167,31 @@ export default function App() {
                           >
                             {isAudioLoading === m.id ? <Loader2 size={18} className="animate-spin" /> : (isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />)}
                           </button>
-                          <button 
-                            onClick={async () => {
-                              if (!user) {
-                                setShowAuthModal(true);
-                                return;
-                              }
-                              if (false && !isPro && premiumReportsCount >= 2) {
-                                alert(language === 'en' 
-                                  ? 'You have reached the limit of 2 premium reports for free users. Please upgrade to Pro for unlimited reports.' 
-                                  : 'Owezezza lipoota 2 eza premium ez\'obwereere. Funa Oracle Pro okufuna lipoota ezirala zonna.');
-                                return;
-                              }
-                              
-                              // Handle free download (Tracked in Local Storage)
-                              const newCount = premiumReportsCount + 1;
-                              setPremiumReportsCount(newCount);
+                          
+                          <div className="flex items-center bg-slate-50 rounded-xl p-1">
+                            <button 
+                              onClick={() => generatePDF(m.content)}
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all"
+                            >
+                              <Download size={12} />
+                              PDF
+                            </button>
+                            <div className="w-px h-3 bg-slate-200 mx-1" />
+                            <button 
+                              onClick={() => generateDOCX(m.content)}
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all"
+                            >
+                              <FileText size={12} />
+                              DOCX
+                            </button>
+                          </div>
 
-                              // Generate and Download PDF
-                              generatePDF(m.content);
-
-                              alert(language === 'en' 
-                                ? 'Your Premium Report has been generated and downloaded.' 
-                                : 'Lipoota yo ey\'enjawulo ekoleddwa era egiddwako.');
-                            }}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"
-                          >
-                            <Download size={14} />
-                            {language === 'en' ? 'Oracle Report' : 'Lipoota ya Oracle'}
-                          </button>
                           <button 
                             onClick={() => setActiveTab('services')}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 text-slate-600 text-xs font-bold hover:bg-slate-100 transition-colors"
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-[10px] font-bold hover:bg-amber-100 transition-colors"
                           >
-                            <Briefcase size={14} />
-                            {language === 'en' ? 'Talk to Lawyer' : 'Manya Munnamateeka'}
+                            <Briefcase size={12} />
+                            {language === 'en' ? 'Legal Help' : 'Obuyambi'}
                           </button>
                         </div>
                       )}
@@ -1171,69 +1287,129 @@ export default function App() {
 
       {/* Input Area */}
       {activeTab === 'chat' && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#FDFCF8] via-[#FDFCF8] to-transparent">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#FDFCF8] via-[#FDFCF8] to-transparent z-50">
           <div className="max-w-4xl mx-auto relative">
-            {false && !isPro && freeQuestionsRemaining <= 0 ? (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-slate-900 rounded-3xl p-6 text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xl"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-amber-600 rounded-2xl flex items-center justify-center shrink-0">
-                    <Scale size={24} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold">{language === 'en' ? 'Free Limit Reached' : 'Obuyambi obw\'obwereere buweddeyo'}</h4>
-                    <p className="text-xs text-slate-400">{language === 'en' ? 'Upgrade to Oracle Pro for unlimited questions.' : 'Funa Oracle Pro okubuuza ebibuuzo ebirala.'}</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => {
-                    if (!user) {
-                      setShowAuthModal(true);
-                      return;
-                    }
-                    setIsPro(true);
-                  }}
-                  className="px-6 py-3 bg-white text-slate-900 rounded-2xl font-bold text-sm hover:bg-slate-100 transition-all w-full md:w-auto"
-                >
-                  {language === 'en' ? 'Upgrade to Pro (UGX 20,000)' : 'Funa Pro (UGX 20,000)'}
-                </button>
-              </motion.div>
-            ) : (
-              <div className="bg-white rounded-3xl shadow-2xl shadow-slate-200 border border-slate-200 p-2 flex items-center gap-2">
-                <button onClick={isRecording ? stopRecording : startRecording} className={cn("w-12 h-12 rounded-2xl flex items-center justify-center transition-all relative overflow-hidden", isRecording ? "bg-red-500 text-white animate-pulse" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>
-                  {isRecording ? <Square size={20} /> : <Mic size={20} />}
-                  {isRecording && <motion.div initial={{ scale: 0 }} animate={{ scale: 2 }} className="absolute inset-0 bg-red-400/20 rounded-full" />}
-                </button>
-                <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={language === 'en' ? "Ask about the laws of Uganda..." : "Buuza ku mateeka ga Uganda..."} className="flex-1 bg-transparent border-none focus:ring-0 px-4 py-3 text-slate-800" />
-                <button onClick={() => handleSend()} disabled={!input.trim() || isLoading} className="w-12 h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"><Send size={20} /></button>
-              </div>
-            )}
+            <div className="bg-white rounded-[2rem] shadow-2xl shadow-slate-200 border border-slate-200 p-2 overflow-hidden">
+              <AnimatePresence mode="wait">
+                {isRecording || audioPreview ? (
+                  <motion.div 
+                    key="recording"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="flex items-center gap-4 px-4 py-2 w-full"
+                  >
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                      <span className="text-sm font-mono font-bold text-slate-600">
+                        {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                      </span>
+                      
+                      <div className="flex items-center h-8 flex-1 px-4">
+                        {[...Array(12)].map((_, i) => (
+                          <div key={i} className="waveform-bar" style={{ animationDelay: `${i * 0.1}s` }} />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={cancelRecording}
+                        className="p-3 text-slate-400 hover:text-red-500 transition-colors"
+                        title="Cancel"
+                      >
+                        <X size={20} />
+                      </button>
+                      
+                      {audioPreview ? (
+                        <button 
+                          onClick={sendRecordedAudio}
+                          className="w-12 h-12 bg-amber-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-amber-200 hover:bg-amber-700 transition-all"
+                        >
+                          <Send size={20} />
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={stopRecording}
+                          className="w-12 h-12 bg-red-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-red-200 hover:bg-red-600 transition-all"
+                        >
+                          <Square size={20} />
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    key="input"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="flex items-center gap-2 w-full"
+                  >
+                    <button 
+                      onMouseDown={() => {
+                        setIsHoldingToRecord(true);
+                        startRecording();
+                      }}
+                      onMouseUp={() => {
+                        setIsHoldingToRecord(false);
+                        stopRecording();
+                      }}
+                      onTouchStart={() => {
+                        setIsHoldingToRecord(true);
+                        startRecording();
+                      }}
+                      onTouchEnd={() => {
+                        setIsHoldingToRecord(false);
+                        stopRecording();
+                      }}
+                      className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center transition-all relative",
+                        isHoldingToRecord ? "bg-amber-100 text-amber-600 scale-110" : "bg-slate-50 text-slate-500 hover:bg-slate-100"
+                      )}
+                      title="Hold to record"
+                    >
+                      <Mic size={20} />
+                    </button>
+                    
+                    <input 
+                      type="text" 
+                      value={input} 
+                      onChange={(e) => setInput(e.target.value)} 
+                      onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
+                      placeholder={language === 'en' ? "Ask about the laws of Uganda..." : "Buuza ku mateeka ga Uganda..."} 
+                      className="flex-1 bg-transparent border-none focus:ring-0 px-4 py-3 text-slate-800 text-sm sm:text-base" 
+                    />
+                    
+                    <button 
+                      onClick={() => handleSend()} 
+                      disabled={!input.trim() || isLoading} 
+                      className="w-12 h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"
+                    >
+                      <Send size={20} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             
-            {false && !isPro && (
-              <div className="flex flex-col items-center gap-1 mt-3">
-                <p className="text-[10px] text-slate-400 font-medium">
-                  {language === 'en' 
-                    ? `${freeQuestionsRemaining} free questions remaining today` 
-                    : `Osigazza ebibuuzo ${freeQuestionsRemaining} eby'obwereere leero`}
-                </p>
-                <p className="text-[10px] text-slate-400 font-medium">
-                  {user 
-                    ? (language === 'en' ? `${voiceMessagesRemaining} voice messages remaining` : `Osigazza ebibuuzo by'eddoboozi ${voiceMessagesRemaining}`)
-                    : (language === 'en' ? 'Sign in to use voice features' : 'Yingira okukozesa eddoboozi')}
-                </p>
+            <div className="flex items-center justify-center gap-4 mt-3">
+              <div className="flex items-center gap-2 px-3 py-1 bg-white/50 backdrop-blur-sm rounded-full border border-slate-200/50">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Speed</span>
+                <input 
+                  type="range" 
+                  min="10" 
+                  max="100" 
+                  step="10"
+                  value={streamingSpeed}
+                  onChange={(e) => setStreamingSpeed(parseInt(e.target.value))}
+                  className="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                />
               </div>
-            )}
-            <p className="text-[10px] text-center text-amber-600 mt-3 font-bold uppercase tracking-widest">
-              Oracle Beta • Unlimited Access Enabled
-            </p>
-            <p className="text-[10px] text-center text-slate-400 mt-3 font-medium">
-              {language === 'en' 
-                ? 'Developed by Jonathan Musiime • Based on the Constitution and Laws of Uganda' 
-                : 'Kyakoleddwa Jonathan Musiime • Okusinziira ku Ssemateeka n\'amateeka ga Uganda'}
-            </p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                Oracle Beta • {isDocumentMode ? 'Document Mode' : 'Chat Mode'}
+              </p>
+            </div>
           </div>
         </div>
       )}
