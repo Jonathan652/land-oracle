@@ -58,25 +58,34 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'freeQuestionsUsed', 'voiceMessagesUsed', 'premiumReportsCount', 'isPro', 'createdAt']) &&
-             data.uid == request.auth.uid &&
-             isValidEmail(data.email) &&
-             (data.freeQuestionsUsed == null || data.freeQuestionsUsed is number) &&
-             (data.voiceMessagesUsed == null || data.voiceMessagesUsed is number) &&
-             (data.premiumReportsCount == null || data.premiumReportsCount is number) &&
-             (data.isPro == null || data.isPro is bool);
+      let allowedFields = ['uid', 'email', 'displayName', 'photoURL', 'freeQuestionsUsed', 'voiceMessagesUsed', 'premiumReportsCount', 'isPro', 'createdAt'];
+      return data.keys().hasOnly(allowedFields) &&
+             (!('uid' in data) || (data.uid is string && data.uid == request.auth.uid)) &&
+             (!('email' in data) || isValidEmail(data.email)) &&
+             (!('freeQuestionsUsed' in data) || data.freeQuestionsUsed is number) &&
+             (!('voiceMessagesUsed' in data) || data.voiceMessagesUsed is number) &&
+             (!('premiumReportsCount' in data) || data.premiumReportsCount is number) &&
+             (!('isPro' in data) || data.isPro is bool) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('displayName' in data) || (data.displayName == null || (data.displayName is string && data.displayName.size() < 100))) &&
+             (!('photoURL' in data) || (data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 500)));
     }
 
     function isValidSession(data) {
-      return hasOnlyAllowedFields(['uid', 'title', 'lastUpdated', 'createdAt']) &&
+      let allowedFields = ['uid', 'title', 'lastUpdated', 'createdAt'];
+      return data.keys().hasOnly(allowedFields) &&
              data.uid == request.auth.uid &&
-             data.title is string && data.title.size() > 0 && data.title.size() < 100;
+             data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             (!('lastUpdated' in data) || data.lastUpdated is timestamp) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidMessage(data) {
-      return hasOnlyAllowedFields(['role', 'content', 'timestamp']) &&
+      let allowedFields = ['role', 'content', 'timestamp'];
+      return data.keys().hasOnly(allowedFields) &&
              data.role in ['user', 'assistant'] &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 5000;
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             (!('timestamp' in data) || data.timestamp is timestamp);
     }
 
     // ===============================================================
@@ -87,9 +96,9 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
       allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
-                      request.resource.data.uid == resource.data.uid &&
-                      request.resource.data.email == resource.data.email &&
-                      request.resource.data.createdAt == resource.data.createdAt;
+                      (!('uid' in resource.data) || request.resource.data.uid == resource.data.uid) &&
+                      (!('email' in resource.data) || request.resource.data.email == resource.data.email) &&
+                      (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
 
       match /sessions/{sessionId} {
         allow read: if isOwner(userId);

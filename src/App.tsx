@@ -69,7 +69,7 @@ interface Lawyer {
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 const SYSTEM_INSTRUCTION = `
-You are the "Uganda Law Oracle", a premier legal expert on the Constitution of the Republic of Uganda and all related legislation including the Land Act.
+You are the "Uganda Law Oracle", a premier legal expert on the Constitution of the Republic of Uganda and all related legislation.
 Your primary mission is to provide legally precise, accurate, and DEEP guidance on all legal matters in Uganda.
 
 STRICT LEGAL ADHERENCE & DEPTH:
@@ -609,6 +609,7 @@ export default function App() {
                 photoURL: firebaseUser.photoURL,
                 freeQuestionsUsed: 0,
                 voiceMessagesUsed: 0,
+                premiumReportsCount: 0,
                 isPro: false,
                 createdAt: serverTimestamp()
               });
@@ -680,12 +681,12 @@ export default function App() {
           model: "gemini-3-flash-preview", // Corrected model name
           contents: [{ role: 'user', parts: [{ text: messageText }] }],
           config: { 
-            systemInstruction: `You are the "Oracle of Uganda," a highly professional, senior legal expert specializing in Ugandan Land Law and Constitutional Law.
+            systemInstruction: `You are the "Oracle of Uganda," a highly professional, senior legal expert specializing in the Constitution and Laws of Uganda.
             
             CRITICAL ACCURACY RULES:
-            1. Use the provided "Land Act" and "Constitution" as your primary source of truth.
+            1. Use the "Constitution" and all provided laws as your primary source of truth.
             2. If a question is complex, break it down step-by-step.
-            3. Always cite specific Sections (e.g., "According to Section 29 of the Land Act...") or Articles.
+            3. Always cite specific Articles (e.g., "According to Article 21 of the Constitution...") or Sections.
             4. Maintain a tone of extreme intelligence, empathy, and authority.
             5. If the user speaks Luganda, respond in professional Luganda. If English, respond in professional English.
             
@@ -745,9 +746,9 @@ export default function App() {
 
   const quickQuestions = [
     { en: "What are my fundamental rights?", lg: "Eddembe lyange ery'obuntu lye liruwa?" },
-    { en: "How can I acquire citizenship?", lg: "Nnyinza ntya okufuna obwannauganda?" },
-    { en: "What are the types of land tenure?", lg: "Ebika by'ettaka mu Uganda bye biruwa?" },
-    { en: "How do I resolve a legal dispute?", lg: "Ngonjoola ntya enkayana z'amateeka?" },
+    { en: "What are the duties of a citizen?", lg: "Obuvunaanyizibwa bw'omunnauganda bwe buluwa?" },
+    { en: "How do I protect my employment rights?", lg: "Nnyinza ntya okukuuma eddembe lyange ku mulimu?" },
+    { en: "What does the law say about marriage?", lg: "Amateeka gagamba ki ku bufumbo?" },
   ];
 
   return (
@@ -923,10 +924,10 @@ export default function App() {
               <div className="py-12 space-y-12">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
                   <h2 className="text-4xl font-bold text-slate-900 tracking-tight">
-                    {language === 'en' ? 'Welcome to the Uganda Law Oracle' : 'Sanyuka okujja eri Oracle w\'amateeka mu Uganda'}
+                    {language === 'en' ? 'The Constitution of Uganda' : 'Ssemateeka wa Uganda'}
                   </h2>
                   <p className="text-lg text-slate-600 max-w-xl mx-auto">
-                    {language === 'en' ? 'Ask any question about the Constitution and Laws of Uganda in Luganda or English.' : 'Buuza ekibuuzo kyonna ku Ssemateeka n\'amateeka ga Uganda mu Luganda oba mu Lungereza.'}
+                    {language === 'en' ? 'Your expert guide to the Constitution and all Laws of the Republic of Uganda.' : 'Omukugu wo ku Ssemateeka n\'amateeka gonna agafuga ensi ya Uganda.'}
                   </p>
                 </motion.div>
 
