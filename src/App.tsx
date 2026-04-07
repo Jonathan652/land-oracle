@@ -274,13 +274,17 @@ export default function App() {
         'audio/webm',
         'audio/mp4',
         'audio/aac',
+        'audio/mpeg',
         'audio/ogg;codecs=opus',
-        'audio/ogg'
+        'audio/ogg',
+        'audio/wav'
       ];
       
       const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
 
       const mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType || undefined });
+      const actualMimeType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       setRecordingDuration(0);
@@ -298,9 +302,14 @@ export default function App() {
       mediaRecorder.onstop = async () => {
         if (audioChunksRef.current.length === 0) {
           console.warn("No audio data captured.");
+          setRecordingError(language === 'en' ? "No audio data captured. Please try again." : "Tewali ddoboozi likwatiddwa. Gezaako nate.");
           return;
         }
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/wav' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: actualMimeType });
+        if (audioBlob.size < 1000) { // Less than 1KB is likely silence or error
+          setRecordingError(language === 'en' ? "Audio too short. Please speak longer." : "Eddoboozi liyimpitidde nnyo. Gezaako nate.");
+          return;
+        }
         setRecordedBlob(audioBlob);
         setAudioPreview(URL.createObjectURL(audioBlob));
         if (timerRef.current) clearInterval(timerRef.current);
@@ -310,7 +319,7 @@ export default function App() {
         await processAudioMessage(audioBlob);
       };
 
-      mediaRecorder.start(500); // 500ms chunks
+      mediaRecorder.start(1000); // 1s chunks for better stability
       setIsRecording(true);
     } catch (err) {
       console.error("Error accessing microphone:", err);
@@ -385,15 +394,25 @@ export default function App() {
       updateSessionMessages(prev => [...prev, userMessage]);
 
       try {
+        if (!navigator.onLine) {
+          throw new Error("No internet connection.");
+        }
+        if (!base64Audio || base64Audio.length < 100) {
+          throw new Error("Audio data is too short or empty.");
+        }
+
         // 2. Transcribe the audio using Gemini
         const transcriptionResponse = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
           contents: [{ 
             parts: [
               { inlineData: { data: base64Audio, mimeType: audioBlob.type || 'audio/webm' } }, 
-              { text: "Transcribe this audio exactly as spoken. If it's in Luganda, transcribe in Luganda. If in English, transcribe in English. Return ONLY the transcription text. If no speech is detected, return '[No speech detected]'." }
+              { text: "Transcribe the following audio precisely. The audio may be in Luganda or English. If you hear Luganda, transcribe in Luganda. If you hear English, transcribe in English. Do not translate. Provide ONLY the transcription text. If no speech is detected, return '[No speech detected]'." }
             ] 
           }],
+          config: {
+            temperature: 0,
+          }
         });
 
         const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : "[Okukyusa kulemye]");
@@ -484,7 +503,10 @@ export default function App() {
         }
       } catch (error) {
         console.error("Voice Processing Error:", error);
-        const errorMessage: Message = { id: generateId(), role: 'assistant', content: "Nfuna obuzibu mu kuwuliriza eddoboozi lyo.", timestamp: new Date() };
+        const errorMsg = language === 'en' 
+          ? "I had trouble processing your voice note. Please ensure you have a stable connection and speak clearly." 
+          : "Nfuna obuzibu mu kuwuliriza eddoboozi lyo. Kakasa nti olina yintaneeti eyamaanyi era oyogere bulungi.";
+        const errorMessage: Message = { id: generateId(), role: 'assistant', content: errorMsg, timestamp: new Date() };
         updateSessionMessages(prev => [...prev, errorMessage]);
       } finally {
         setIsLoading(false);
