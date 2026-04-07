@@ -155,7 +155,13 @@ export default function App() {
     };
     handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
 
   const handleAcceptLegalNotice = () => {
@@ -169,6 +175,7 @@ export default function App() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
@@ -267,7 +274,10 @@ export default function App() {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!streamRef.current || !streamRef.current.active) {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      const stream = streamRef.current;
       
       const mimeTypes = [
         'audio/webm;codecs=opus',
@@ -319,7 +329,6 @@ export default function App() {
         setRecordedBlob(audioBlob);
         setAudioPreview(URL.createObjectURL(audioBlob));
         if (timerRef.current) clearInterval(timerRef.current);
-        stream.getTracks().forEach(track => track.stop());
         
         // Auto-send after stopping
         await processAudioMessage(audioBlob);
@@ -445,11 +454,11 @@ export default function App() {
       while (retries >= 0) {
         try {
           transcriptionResponse = await ai.models.generateContent({
-            model: "gemini-3.1-pro-preview",
+            model: "gemini-3-flash-preview",
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: "Please transcribe the following audio exactly as spoken. The audio is either in Luganda or English. Transcribe in the original language. Do not translate. Return ONLY the transcribed text. If no speech is detected, return '[No speech detected]'." }
+                { text: "Please transcribe the following audio precisely. The audio is either in Luganda or English. Transcribe in the original language spoken. Do not translate. Return ONLY the transcribed text. If no speech is detected, return '[No speech detected]'." }
               ] 
             },
             config: {
@@ -554,9 +563,10 @@ export default function App() {
       }
     } catch (error) {
       console.error("Voice Processing Error:", error);
+      const debugInfo = `(${mimeType || 'unknown'}, ${Math.round(audioBlob.size / 1024)}KB)`;
       const errorMsg = language === 'en' 
-        ? "I had trouble processing your voice note. Please ensure you have a stable connection and speak clearly." 
-        : "Nfuna obuzibu mu kuwuliriza eddoboozi lyo. Kakasa nti olina yintaneeti eyamaanyi era oyogere bulungi.";
+        ? `I had trouble processing your voice note ${debugInfo}. Please ensure you have a stable connection and speak clearly.` 
+        : `Nfuna obuzibu mu kuwuliriza eddoboozi lyo ${debugInfo}. Kakasa nti olina yintaneeti eyamaanyi era oyogere bulungi.`;
       const errorMessage: Message = { id: generateId(), role: 'assistant', content: errorMsg, timestamp: new Date() };
       updateSessionMessages(prev => [...prev, errorMessage]);
     } finally {
