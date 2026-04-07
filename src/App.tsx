@@ -55,7 +55,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    const saved = localStorage.getItem('land_oracle_sessions');
+    const saved = localStorage.getItem('uganda_law_oracle_sessions');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -72,7 +72,7 @@ export default function App() {
   });
   
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
-    const last = localStorage.getItem('land_oracle_last_session');
+    const last = localStorage.getItem('uganda_law_oracle_last_session');
     return last || null;
   });
 
@@ -100,7 +100,7 @@ export default function App() {
   const [autoTalkBack, setAutoTalkBack] = useState(true);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [premiumReportsCount, setPremiumReportsCount] = useState(() => {
-    const saved = localStorage.getItem('land_oracle_premium_reports');
+    const saved = localStorage.getItem('uganda_law_oracle_premium_reports');
     return saved ? parseInt(saved, 10) : 0;
   });
 
@@ -114,8 +114,9 @@ export default function App() {
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [streamingContent, setStreamingContent] = useState<Record<string, string>>({});
   const [showLegalNotice, setShowLegalNotice] = useState(() => {
-    return localStorage.getItem('uganda_law_portal_legal_notice_accepted') !== 'true';
+    return localStorage.getItem('uganda_law_oracle_legal_notice_accepted') !== 'true';
   });
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const [verificationSteps, setVerificationSteps] = useState<string[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<'chat' | 'lawyers' | 'documents' | 'services'>('chat');
@@ -134,7 +135,7 @@ export default function App() {
   }, []);
 
   const handleAcceptLegalNotice = () => {
-    localStorage.setItem('uganda_law_portal_legal_notice_accepted', 'true');
+    localStorage.setItem('uganda_law_oracle_legal_notice_accepted', 'true');
     setShowLegalNotice(false);
   };
 
@@ -157,16 +158,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem('land_oracle_sessions', JSON.stringify(sessions));
+    localStorage.setItem('uganda_law_oracle_sessions', JSON.stringify(sessions));
   }, [sessions]);
 
   useEffect(() => {
-    localStorage.setItem('land_oracle_premium_reports', premiumReportsCount.toString());
+    localStorage.setItem('uganda_law_oracle_premium_reports', premiumReportsCount.toString());
   }, [premiumReportsCount]);
 
   useEffect(() => {
     if (currentSessionId) {
-      localStorage.setItem('land_oracle_last_session', currentSessionId);
+      localStorage.setItem('uganda_law_oracle_last_session', currentSessionId);
     }
     scrollToBottom();
   }, [currentSessionId, messages]);
@@ -197,8 +198,8 @@ export default function App() {
     if (window.confirm(language === 'en' ? 'Clear all chat history?' : 'Ggyamu ebyafaayo byonna?')) {
       setSessions([]);
       setCurrentSessionId(null);
-      localStorage.removeItem('land_oracle_sessions');
-      localStorage.removeItem('land_oracle_last_session');
+      localStorage.removeItem('uganda_law_oracle_sessions');
+      localStorage.removeItem('uganda_law_oracle_last_session');
     }
   };
 
@@ -231,9 +232,17 @@ export default function App() {
 
   const startRecording = async () => {
     if (!isPro && freeQuestionsRemaining <= 0) return;
+    setRecordingError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : MediaRecorder.isTypeSupported('audio/mp4') 
+          ? 'audio/mp4' 
+          : 'audio/ogg';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       setRecordingDuration(0);
@@ -249,18 +258,18 @@ export default function App() {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         setRecordedBlob(audioBlob);
         setAudioPreview(URL.createObjectURL(audioBlob));
         if (timerRef.current) clearInterval(timerRef.current);
         stream.getTracks().forEach(track => track.stop());
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(1000); // Collect data every second for better reliability
       setIsRecording(true);
     } catch (err) {
       console.error("Error accessing microphone:", err);
-      alert("Nfuna obuzibu mu kukozesa akazindaalo. (Could not access microphone.)");
+      setRecordingError(language === 'en' ? "Could not access microphone." : "Nfuna obuzibu mu kukozesa akazindaalo.");
     }
   };
 
@@ -337,7 +346,7 @@ export default function App() {
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
           model: "gemini-3-flash-preview",
-          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
+          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: audioBlob.type || 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
           config: { 
             systemInstruction: systemPrompt, 
             temperature: 0.4 
@@ -368,7 +377,7 @@ export default function App() {
       } else {
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
+          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: audioBlob.type || 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
           config: { 
             systemInstruction: systemPrompt, 
             temperature: 0.4 
@@ -912,7 +921,7 @@ export default function App() {
               <Scale size={22} />
             </div>
             <div>
-              <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Portal</h1>
+              <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Oracle</h1>
               <p className="text-[10px] text-[#C5A059] font-bold uppercase tracking-[0.2em]">Legal Information System</p>
             </div>
           </div>
@@ -1081,7 +1090,7 @@ export default function App() {
                         <Scale size={32} className="sm:w-12 sm:h-12" />
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-display font-bold text-[#0B0F1A] tracking-tight leading-tight">
-                        {language === 'en' ? 'Uganda Law Portal' : 'Amateeka ga Uganda'}
+                        {language === 'en' ? 'Uganda Law Oracle' : 'Amateeka ga Uganda'}
                       </h2>
                       <p className="text-base sm:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed px-4">
                         {language === 'en' 
@@ -1227,6 +1236,19 @@ export default function App() {
       {activeTab === 'chat' && (
         <footer className="p-3 sm:p-8 bg-white border-t border-slate-100 shrink-0 z-30 safe-bottom">
           <div className="max-w-4xl mx-auto">
+            {recordingError && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-3 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-xs flex items-center gap-2 shadow-sm"
+              >
+                <ShieldAlert size={16} className="shrink-0" />
+                <span className="flex-1">{recordingError}</span>
+                <button onClick={() => setRecordingError(null)} className="p-1 hover:bg-red-100 rounded-lg transition-colors">
+                  <X size={16} />
+                </button>
+              </motion.div>
+            )}
             <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-end gap-2 sm:gap-6">
               <div className="flex-1 relative bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200 focus-within:border-[#C5A059] focus-within:ring-4 sm:focus-within:ring-8 focus-within:ring-[#C5A059]/5 transition-all">
                 <textarea

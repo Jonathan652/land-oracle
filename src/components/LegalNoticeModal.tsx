@@ -24,7 +24,7 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
               </div>
               <div>
                 <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">Professional Legal Notice</h2>
-                <p className="text-[#C5A059] text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] mt-1">Uganda Law Portal</p>
+                <p className="text-[#C5A059] text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] mt-1">Uganda Law Oracle</p>
               </div>
             </div>
 
