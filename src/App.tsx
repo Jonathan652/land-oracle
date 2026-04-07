@@ -53,6 +53,29 @@ import { LegalNoticeModal } from './components/LegalNoticeModal';
 // --- Oracle Core ---
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
+const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+// --- Components ---
+const Waveform = () => (
+  <div className="flex items-center gap-1 h-8">
+    {[...Array(12)].map((_, i) => (
+      <motion.div
+        key={i}
+        animate={{
+          height: [8, 24, 12, 28, 8],
+        }}
+        transition={{
+          duration: 0.8,
+          repeat: Infinity,
+          delay: i * 0.05,
+          ease: "easeInOut"
+        }}
+        className="w-1 bg-[#C5A059] rounded-full"
+      />
+    ))}
+  </div>
+);
+
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     const saved = localStorage.getItem('uganda_law_oracle_sessions');
@@ -108,6 +131,7 @@ export default function App() {
   const [isStreamingMode, setIsStreamingMode] = useState(true);
   const [streamingSpeed, setStreamingSpeed] = useState(30); // ms per character
   const [isDocumentMode, setIsDocumentMode] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [isHoldingToRecord, setIsHoldingToRecord] = useState(false);
   const [audioPreview, setAudioPreview] = useState<string | null>(null);
@@ -174,7 +198,7 @@ export default function App() {
 
   const createNewSession = () => {
     const newSession: ChatSession = {
-      id: Date.now().toString(),
+      id: generateId(),
       title: language === 'en' ? 'New Conversation' : 'Mboozi Mpya',
       messages: [],
       lastUpdated: new Date()
@@ -203,27 +227,30 @@ export default function App() {
     }
   };
 
-  const updateSessionMessages = (newMessages: Message[]) => {
+  const updateSessionMessages = (newMessages: Message[] | ((prev: Message[]) => Message[])) => {
     if (!currentSessionId) {
+      const messagesToUse = typeof newMessages === 'function' ? newMessages([]) : newMessages;
       const newSession: ChatSession = {
-        id: Date.now().toString(),
-        title: newMessages[0]?.content.substring(0, 30) + '...',
-        messages: newMessages,
+        id: generateId(),
+        title: messagesToUse[0]?.content.substring(0, 30) + '...',
+        messages: messagesToUse,
         lastUpdated: new Date()
       };
       setSessions(prev => [newSession, ...prev]);
       setCurrentSessionId(newSession.id);
     } else {
-      setSessions(prev => prev.map(s => 
-        s.id === currentSessionId 
-          ? { 
-              ...s, 
-              messages: newMessages, 
-              lastUpdated: new Date(),
-              title: s.messages.length === 0 ? newMessages[0]?.content.substring(0, 30) + '...' : s.title
-            } 
-          : s
-      ));
+      setSessions(prev => prev.map(s => {
+        if (s.id === currentSessionId) {
+          const messagesToUse = typeof newMessages === 'function' ? newMessages(s.messages) : newMessages;
+          return { 
+            ...s, 
+            messages: messagesToUse, 
+            lastUpdated: new Date(),
+            title: s.messages.length === 0 ? messagesToUse[0]?.content.substring(0, 30) + '...' : s.title
+          };
+        }
+        return s;
+      }));
     }
   };
 
@@ -233,16 +260,27 @@ export default function App() {
   const startRecording = async () => {
     if (!isPro && freeQuestionsRemaining <= 0) return;
     setRecordingError(null);
+    
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      setRecordingError(language === 'en' ? "Recording not supported in this browser." : "Okukwata eddoboozi tekuwagirwa mu browser eno.");
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
-        ? 'audio/webm' 
-        : MediaRecorder.isTypeSupported('audio/mp4') 
-          ? 'audio/mp4' 
-          : 'audio/ogg';
+      const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/aac',
+        'audio/ogg;codecs=opus',
+        'audio/ogg'
+      ];
+      
+      const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType || undefined });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       setRecordingDuration(0);
@@ -258,18 +296,33 @@ export default function App() {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (audioChunksRef.current.length === 0) {
+          console.warn("No audio data captured.");
+          return;
+        }
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/wav' });
         setRecordedBlob(audioBlob);
         setAudioPreview(URL.createObjectURL(audioBlob));
         if (timerRef.current) clearInterval(timerRef.current);
         stream.getTracks().forEach(track => track.stop());
+        
+        // Auto-send after stopping
+        await processAudioMessage(audioBlob);
       };
 
-      mediaRecorder.start(1000); // Collect data every second for better reliability
+      mediaRecorder.start(500); // 500ms chunks
       setIsRecording(true);
     } catch (err) {
       console.error("Error accessing microphone:", err);
-      setRecordingError(language === 'en' ? "Could not access microphone." : "Nfuna obuzibu mu kukozesa akazindaalo.");
+      setRecordingError(language === 'en' ? "Microphone access denied or not found." : "Akazindaalo kagaanye okukozesebwa.");
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
     }
   };
 
@@ -302,6 +355,7 @@ export default function App() {
 
   const processAudioMessage = async (audioBlob: Blob) => {
     setIsLoading(true);
+    setIsTranscribing(true);
     
     // Mobile Audio Unlock: Resume context immediately on user click
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -310,6 +364,7 @@ export default function App() {
     if (!user && freeQuestionsRemaining <= 0) {
       setShowAuthModal(true);
       setIsLoading(false);
+      setIsTranscribing(false);
       return;
     }
 
@@ -317,77 +372,103 @@ export default function App() {
     reader.readAsDataURL(audioBlob);
     reader.onloadend = async () => {
       const base64Audio = (reader.result as string).split(',')[1];
+      
+      // 1. Create placeholder user message
+      const userMessageId = generateId();
       const userMessage: Message = {
-        id: Date.now().toString(),
+        id: userMessageId,
         role: 'user',
-        content: language === 'en' ? "[Audio Message]" : "[Bubaka bwa ddoboozi]",
-        timestamp: new Date(),
-      };
-      const updatedMessages = [...messages, userMessage];
-      updateSessionMessages(updatedMessages);
-
-    try {
-      const assistantMessageId = (Date.now() + 1).toString();
-      const assistantMessage: Message = {
-        id: assistantMessageId,
-        role: 'assistant',
-        content: "",
+        content: language === 'en' ? "Transcribing voice note..." : "Nkyusa eddoboozi mu biwandiiko...",
         timestamp: new Date(),
       };
       
-      // ADD MESSAGE TO UI BEFORE STREAMING
-      const messagesWithPlaceholder = [...updatedMessages, assistantMessage];
-      updateSessionMessages(messagesWithPlaceholder);
+      updateSessionMessages(prev => [...prev, userMessage]);
 
-      const systemPrompt = isDocumentMode 
-        ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-        : SYSTEM_INSTRUCTION;
-
-      if (isStreamingMode) {
-        const stream = await ai.models.generateContentStream({
+      try {
+        // 2. Transcribe the audio using Gemini
+        const transcriptionResponse = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: audioBlob.type || 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
-          config: { 
-            systemInstruction: systemPrompt, 
-            temperature: 0.4 
-          },
+          contents: [{ 
+            parts: [
+              { inlineData: { data: base64Audio, mimeType: audioBlob.type || 'audio/webm' } }, 
+              { text: "Transcribe this audio exactly as spoken. If it's in Luganda, transcribe in Luganda. If in English, transcribe in English. Return ONLY the transcription text. If no speech is detected, return '[No speech detected]'." }
+            ] 
+          }],
         });
 
-        let fullText = "";
-        for await (const chunk of stream) {
-          fullText += chunk.text;
-          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-          
-          // Smoother scrolling: only scroll if we're already near the bottom
-          const container = document.documentElement;
-          const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-          if (isNearBottom) {
-            scrollToBottom();
+        const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : "[Okukyusa kulemye]");
+        
+        // 3. Update user message with transcribed text
+        updateSessionMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, content: transcribedText } : m));
+        setIsTranscribing(false);
+
+        // 4. Proceed to generate assistant response
+        const assistantMessageId = generateId();
+        const assistantMessage: Message = {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: "",
+          timestamp: new Date(),
+        };
+        
+        updateSessionMessages(prev => [...prev, assistantMessage]);
+
+        const systemPrompt = isDocumentMode 
+          ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
+          : SYSTEM_INSTRUCTION;
+
+        if (isStreamingMode) {
+          const stream = await ai.models.generateContentStream({
+            model: "gemini-3-flash-preview",
+            contents: [{ 
+              parts: [
+                { text: transcribedText }
+              ] 
+            }],
+            config: { 
+              systemInstruction: systemPrompt, 
+              temperature: 0.4 
+            },
+          });
+
+          let fullText = "";
+          for await (const chunk of stream) {
+            fullText += chunk.text;
+            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+            
+            const container = document.documentElement;
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+            if (isNearBottom) {
+              scrollToBottom();
+            }
           }
+          
+          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+          setStreamingContent(prev => {
+            const next = { ...prev };
+            delete next[assistantMessageId];
+            return next;
+          });
+          speakText(fullText, assistantMessageId);
+        } else {
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [{ 
+              parts: [
+                { text: transcribedText }
+              ] 
+            }],
+            config: { 
+              systemInstruction: systemPrompt, 
+              temperature: 0.4 
+            },
+          });
+          const fullText = response.text || "I apologize.";
+          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+          speakText(fullText, assistantMessageId);
         }
-        
-        assistantMessage.content = fullText;
-        updateSessionMessages([...updatedMessages, assistantMessage]);
-        setStreamingContent(prev => {
-          const next = { ...prev };
-          delete next[assistantMessageId];
-          return next;
-        });
-        speakText(fullText, assistantMessageId);
-      } else {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: [{ parts: [{ inlineData: { data: base64Audio, mimeType: audioBlob.type || 'audio/webm' } }, { text: "Listen and respond in the same language based on the Constitution and Laws of Uganda." }] }],
-          config: { 
-            systemInstruction: systemPrompt, 
-            temperature: 0.4 
-          },
-        });
-        assistantMessage.content = response.text || "I apologize.";
-        updateSessionMessages([...updatedMessages, assistantMessage]);
-        speakText(assistantMessage.content, assistantMessageId);
-      }
-        
+          
+        // Update usage
         if (user) {
           const userRef = doc(db, 'users', user.uid);
           try {
@@ -403,10 +484,11 @@ export default function App() {
         }
       } catch (error) {
         console.error("Voice Processing Error:", error);
-        const errorMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: "Nfuna obuzibu mu kuwuliriza eddoboozi lyo.", timestamp: new Date() };
-        updateSessionMessages([...updatedMessages, errorMessage]);
+        const errorMessage: Message = { id: generateId(), role: 'assistant', content: "Nfuna obuzibu mu kuwuliriza eddoboozi lyo.", timestamp: new Date() };
+        updateSessionMessages(prev => [...prev, errorMessage]);
       } finally {
         setIsLoading(false);
+        setIsTranscribing(false);
       }
     };
   };
@@ -731,9 +813,9 @@ export default function App() {
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
 
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: messageText, timestamp: new Date() };
-    const updatedMessages = [...messages, userMessage];
-    updateSessionMessages(updatedMessages);
+    const userMessage: Message = { id: generateId(), role: 'user', content: messageText, timestamp: new Date() };
+    const promptMessages = [...messages, userMessage];
+    updateSessionMessages(prev => [...prev, userMessage]);
     
     if (!textOverride) setInput('');
     setIsLoading(true);
@@ -742,7 +824,7 @@ export default function App() {
     try {
       addVerificationStep(language === 'en' ? "Analyzing legal intent..." : "Okukebera ekigendererwa...");
       
-      const assistantMessageId = (Date.now() + 1).toString();
+      const assistantMessageId = generateId();
       const assistantMessage: Message = {
         id: assistantMessageId,
         role: 'assistant',
@@ -751,8 +833,7 @@ export default function App() {
       };
 
       // ADD MESSAGE TO UI BEFORE STREAMING
-      const messagesWithPlaceholder = [...updatedMessages, assistantMessage];
-      updateSessionMessages(messagesWithPlaceholder);
+      updateSessionMessages(prev => [...prev, assistantMessage]);
 
       const systemPrompt = isDocumentMode 
         ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
@@ -774,7 +855,7 @@ export default function App() {
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
           model: "gemini-3-flash-preview",
-          contents: updatedMessages.map(m => ({
+          contents: promptMessages.map(m => ({
             role: m.role,
             parts: [{ text: m.content }]
           })),
@@ -816,8 +897,7 @@ export default function App() {
           }
         }
         
-        assistantMessage.content = fullText;
-        updateSessionMessages([...updatedMessages, assistantMessage]);
+        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         setStreamingContent(prev => {
           const next = { ...prev };
           delete next[assistantMessageId];
@@ -830,7 +910,7 @@ export default function App() {
       } else {
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: updatedMessages.map(m => ({
+          contents: promptMessages.map(m => ({
             role: m.role,
             parts: [{ text: m.content }]
           })),
@@ -856,8 +936,7 @@ export default function App() {
           }
         }
 
-        assistantMessage.content = fullText;
-        updateSessionMessages([...updatedMessages, assistantMessage]);
+        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         
         if (autoTalkBack && !hasToolCall) {
           speakText(assistantMessage.content, assistantMessageId);
@@ -880,8 +959,8 @@ export default function App() {
     } catch (error: any) {
       console.error(`Oracle Error:`, error);
       const errorMessage = "Nfuna obuzibu mu kukuddamu.";
-      const assistantError: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorMessage, timestamp: new Date() };
-      updateSessionMessages([...updatedMessages, assistantError]);
+      const assistantError: Message = { id: generateId(), role: 'assistant', content: errorMessage, timestamp: new Date() };
+      updateSessionMessages(prev => [...prev, assistantError]);
     }
     setIsLoading(false);
   };
@@ -934,7 +1013,7 @@ export default function App() {
           <button 
             onClick={() => {
               const newSession: ChatSession = {
-                id: Date.now().toString(),
+                id: generateId(),
                 title: language === 'en' ? 'New Inquiry' : 'Okubuuza Okupya',
                 messages: [],
                 lastUpdated: new Date(),
@@ -1251,56 +1330,83 @@ export default function App() {
             )}
             <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-end gap-2 sm:gap-6">
               <div className="flex-1 relative bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200 focus-within:border-[#C5A059] focus-within:ring-4 sm:focus-within:ring-8 focus-within:ring-[#C5A059]/5 transition-all">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder={language === 'en' ? "Enter legal inquiry..." : "Wandiika ekibuuzo kyo..."}
-                  className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
-                  rows={1}
-                />
-                <div className="flex items-center justify-between px-3 sm:px-6 pb-2 sm:pb-4">
-                  <div className="flex items-center gap-1.5 sm:gap-3">
-                    <button 
+                {isRecording ? (
+                  <div className="w-full flex items-center justify-between p-4 sm:p-6 bg-white rounded-2xl sm:rounded-[2rem] border-2 border-[#C5A059] shadow-lg">
+                    <div className="flex items-center gap-4">
+                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                      <span className="font-mono font-bold text-lg text-[#0B0F1A]">
+                        {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                      </span>
+                    </div>
+                    <Waveform />
+                    <button
                       type="button"
-                      onClick={() => setIsDocumentMode(!isDocumentMode)}
-                      className={cn(
-                        "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-bold uppercase tracking-widest transition-all",
-                        isDocumentMode ? "bg-[#C5A059] text-[#0B0F1A] shadow-lg shadow-[#C5A059]/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
-                      )}
+                      onClick={stopRecording}
+                      className="p-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 active:scale-95"
                     >
-                      <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
-                      <span className="hidden xs:inline">{language === 'en' ? 'Document' : 'Ekiwandiiko'}</span>
-                      <span className="xs:hidden">DOC</span>
-                    </button>
-                    <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
-                    <button 
-                      type="button"
-                      onMouseDown={startRecording}
-                      onMouseUp={stopRecording}
-                      onTouchStart={startRecording}
-                      onTouchEnd={stopRecording}
-                      className={cn(
-                        "p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-all",
-                        isRecording ? "bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/20" : "text-slate-400 hover:bg-slate-200"
-                      )}
-                    >
-                      <Mic size={16} className="sm:w-5 sm:h-5" />
+                      <Square size={20} fill="currentColor" />
                     </button>
                   </div>
-                  <button
-                    type="submit"
-                    disabled={!input.trim() || isLoading}
-                    className="p-2 sm:p-3.5 bg-[#0B0F1A] text-[#C5A059] rounded-lg sm:rounded-2xl hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-black/10 active:scale-95"
-                  >
-                    {isLoading ? <Loader2 size={18} className="animate-spin sm:w-6 sm:h-6" /> : <Send size={18} className="sm:w-6 sm:h-6" />}
-                  </button>
-                </div>
+                ) : isTranscribing ? (
+                  <div className="w-full flex items-center justify-center p-4 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200">
+                    <div className="flex items-center gap-3 text-[#C5A059]">
+                      <Loader2 size={24} className="animate-spin" />
+                      <span className="font-bold uppercase tracking-widest text-xs">
+                        {language === 'en' ? 'Transcribing...' : 'Nkyusa eddoboozi...'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      placeholder={language === 'en' ? "Enter legal inquiry..." : "Wandiika ekibuuzo kyo..."}
+                      className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
+                      rows={1}
+                    />
+                    <div className="flex items-center justify-between px-3 sm:px-6 pb-2 sm:pb-4">
+                      <div className="flex items-center gap-1.5 sm:gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => setIsDocumentMode(!isDocumentMode)}
+                          className={cn(
+                            "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-bold uppercase tracking-widest transition-all",
+                            isDocumentMode ? "bg-[#C5A059] text-[#0B0F1A] shadow-lg shadow-[#C5A059]/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+                          )}
+                        >
+                          <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
+                          <span className="hidden xs:inline">{language === 'en' ? 'Document' : 'Ekiwandiiko'}</span>
+                          <span className="xs:hidden">DOC</span>
+                        </button>
+                        <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
+                        <button 
+                          type="button"
+                          onClick={toggleRecording}
+                          className={cn(
+                            "p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-all",
+                            "text-slate-400 hover:bg-slate-200"
+                          )}
+                        >
+                          <Mic size={16} className="sm:w-5 sm:h-5" />
+                        </button>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={!input.trim() || isLoading}
+                        className="p-2 sm:p-3.5 bg-[#0B0F1A] text-[#C5A059] rounded-lg sm:rounded-2xl hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-black/10 active:scale-95"
+                      >
+                        {isLoading ? <Loader2 size={18} className="animate-spin sm:w-6 sm:h-6" /> : <Send size={18} className="sm:w-6 sm:h-6" />}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </form>
             <p className="text-[8px] sm:text-[10px] text-center text-slate-400 mt-3 sm:mt-6 font-bold uppercase tracking-[0.1em] px-4">
