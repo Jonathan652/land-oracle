@@ -48,4 +48,10 @@ ADDITIONAL UGANDAN LAWS AND REGULATIONS
 - Disclosure: Both mortgagor and mortgagee must act in good faith and disclose all relevant information.
 - Power of Sale: If a mortgagor defaults, the mortgagee can sell the land after giving at least 21 working days' notice.
 - Priority: Mortgages rank in priority according to the order in which they are registered.
+9. REGISTRATION OF TITLES ACT (CHAPTER 240)
+- Registration: Any person claiming to be the owner of any land may apply to the Registrar of Titles to have that land brought under the operation of the Act.
+- Indefeasibility: Once a person is registered as the owner of land, their title is perfect and cannot be challenged except in cases of fraud.
+- Transfers: No land or any interest in land shall be transferred or created except by an instrument in writing signed by the parties and registered.
+- Caveats: A person claiming an interest in land may lodge a caveat with the Registrar to prevent any dealings with that land.
+- Fraud: Fraud is defined as "dishonesty" and must be attributed to the person who became registered as the owner for a title to be cancelled.
 `;

@@ -90,11 +90,16 @@ STRICT BEHAVIOR RULES:
     - Start directly with the title or the first clause.
 11. Before answering, internally analyze the user's intent and choose the best format (explanation, steps, document, or template). Then produce ONLY the final polished output.
 
-STRICT LEGAL ADHERENCE & DEPTH:
-- Base every answer on specific articles of the Constitution of Uganda, sections of the Land Act, and other relevant laws.
-- **VERIFICATION STEP**: Before outputting any article or section number, you MUST search the provided CONTEXT below to ensure that provision exists and covers the topic.
-- Explain the "WHY" behind the law.
-- **USE EXAMPLES**: Provide realistic examples or scenarios to illustrate legal principles.
+STRICT ACCURACY & GROUNDING:
+- **SOURCE-ONLY KNOWLEDGE**: You are a specialized Oracle for Ugandan Land Law. Your primary knowledge MUST come from the provided CONTEXT. You MUST prioritize the CONTEXT over your general training data for all statutory references, chapter numbers, and legal principles.
+- **ZERO TOLERANCE FOR HALLUCINATION**: You MUST NOT guess, infer, or hallucinate numbers, dates, or legal provisions. If a specific detail (like a Chapter number or a specific Section) is not explicitly mentioned in the CONTEXT, you MUST state: "This specific detail is not available in my current legal database" rather than providing a potentially incorrect number.
+- **MANDATORY VERIFICATION PASS**: Before generating any response, you MUST perform a three-step internal verification:
+    1. **Identify**: List all legal references you intend to use.
+    2. **Verify**: Locate each reference in the CONTEXT below and confirm the exact wording and numbering.
+    3. **Correct**: If your internal knowledge contradicts the CONTEXT (e.g., a different Chapter number), you MUST use the number provided in the CONTEXT.
+- **EXPLICIT CITATIONS**: Every legal statement MUST be followed by its specific source from the CONTEXT (e.g., "Section 39 of the Land Act (Cap 236)" or "Article 237 of the Constitution").
+- **PRECISION**: Legal accuracy is your highest priority. A single incorrect digit in a Chapter or Section number is considered a critical failure.
+- **BILINGUAL INTEGRITY**: Luganda translations must maintain the exact same legal precision and numbering as the English text. Never simplify a legal reference in translation.
 - Use ULII (ulii.org) as your primary reference for Ugandan legislation and case law.
 - Reference landmark Ugandan cases to support your guidance.
 
@@ -1041,60 +1046,61 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-3">
           <button 
             onClick={() => setShowHistory(!showHistory)}
-            className={cn("flex items-center justify-center w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-full transition-colors text-sm font-medium", showHistory ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
+            className={cn("flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 rounded-xl transition-all text-sm font-medium", showHistory ? "bg-amber-600 text-white shadow-lg shadow-amber-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
             title={language === 'en' ? 'Chat History' : 'Ebyafaayo'}
           >
-            <History size={16} />
+            <History size={18} />
+            <span className="hidden lg:inline ml-2">{language === 'en' ? 'History' : 'Ebyafaayo'}</span>
           </button>
           
           <button 
             onClick={() => setAutoTalkBack(!autoTalkBack)}
             className={cn(
-              "flex items-center justify-center w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-full transition-colors text-sm font-medium", 
-              autoTalkBack ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              "flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 rounded-xl transition-all text-sm font-medium", 
+              autoTalkBack ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
             )}
             title={language === 'en' ? 'Auto Talk Back' : 'Okuddamu mu ddoboozi'}
           >
-            {autoTalkBack ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            <span className="hidden md:inline ml-2">{language === 'en' ? 'Talk Back' : 'Doboozi'}</span>
+            {autoTalkBack ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            <span className="hidden lg:inline ml-2">{language === 'en' ? 'Talk Back' : 'Doboozi'}</span>
           </button>
 
           <button 
             onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
-            className="flex items-center justify-center w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-medium"
+            className="flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all text-sm font-medium text-slate-600"
           >
-            <Languages size={16} />
-            <span className="hidden md:inline ml-2">{language === 'en' ? 'English' : 'Luganda'}</span>
+            <Languages size={18} />
+            <span className="hidden lg:inline ml-2">{language === 'en' ? 'English' : 'Luganda'}</span>
           </button>
 
           {user ? (
-            <div className="flex items-center gap-1 sm:gap-2">
-              <div className="flex items-center gap-2 px-2 py-1.5 sm:px-3 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-sm font-medium">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2 px-2 py-2 sm:px-4 rounded-xl bg-amber-50 text-amber-700 border border-amber-100 text-sm font-bold shadow-sm">
                 {user.photoURL ? (
-                  <img src={user.photoURL} className="w-5 h-5 rounded-full" alt="" />
+                  <img src={user.photoURL} className="w-6 h-6 rounded-lg" alt="" />
                 ) : (
-                  <User size={16} />
+                  <User size={18} />
                 )}
-                <span className="hidden md:inline truncate max-w-[80px]">{user.displayName || user.email}</span>
+                <span className="hidden xl:inline truncate max-w-[100px]">{user.displayName || user.email}</span>
               </div>
               <button 
                 onClick={() => logout()}
-                className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                className="p-2.5 text-slate-400 hover:text-red-500 transition-colors bg-slate-50 rounded-xl"
                 title={language === 'en' ? 'Logout' : 'Fuluma'}
               >
-                <X size={18} />
+                <X size={20} />
               </button>
             </div>
           ) : (
             <button 
               onClick={() => setShowAuthModal(true)}
-              className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium shadow-sm"
+              className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-all text-sm font-bold shadow-lg shadow-amber-200"
             >
-              <User size={16} />
-              <span className="hidden xs:inline">{language === 'en' ? 'Sign In' : 'Yingira'}</span>
+              <User size={18} />
+              <span className="hidden sm:inline">{language === 'en' ? 'Sign In' : 'Yingira'}</span>
             </button>
           )}
         </div>
@@ -1229,9 +1235,15 @@ export default function App() {
                       {m.role === 'user' ? <User size={16} className="sm:w-5 sm:h-5" /> : <Bot size={16} className="sm:w-5 sm:h-5" />}
                     </div>
                     <div className={cn(
-                      "max-w-[92%] sm:max-w-[85%] rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-sm relative group", 
-                      m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800"
+                      "max-w-[92%] sm:max-w-[85%] rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-sm relative group transition-all", 
+                      m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800 shadow-slate-100"
                     )}>
+                      {m.role === 'assistant' && (
+                        <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold text-amber-600 uppercase tracking-widest">
+                          <ShieldCheck size={12} />
+                          <span>Verified Legal Source</span>
+                        </div>
+                      )}
                       <div className="markdown-body prose prose-slate prose-sm max-w-none dark:prose-invert">
                         <Markdown 
                           remarkPlugins={[remarkGfm]}

@@ -13,7 +13,7 @@ LANDMARK UGANDAN LAND LAW CASES (REFERENCE)
 - Principle: Clarified the power of District Land Boards. It held that Land Boards hold land in trust for the citizens and must follow proper procedures when allocating land, especially when converting leases to freehold.
 
 3. Lwanga v Registrar of Titles (1980)
-- Principle: Indefeasibility of Title. Established that once a person is registered as the owner of land under the Registration of Titles Act, their title is perfect and cannot be challenged except in cases of fraud.
+- Principle: Indefeasibility of Title. Established that once a person is registered as the owner of land under the Registration of Titles Act (Chapter 240), their title is perfect and cannot be challenged except in cases of fraud.
 
 4. Adonia v Mutekanga (1970)
 - Principle: Fraud in Land Transactions. Defined fraud as "dishonesty" and held that for a title to be cancelled due to fraud, the fraud must be attributed to the person who became registered as the owner.

@@ -8,7 +8,7 @@ UGANDA LAND ACT (CHAPTER 236) - COMPREHENSIVE LEGAL REFERENCE
 
 PART I – INTERPRETATION
 1. Interpretation
-- "alienated" means alienated by the grant of an estate in freehold or leasehold which is registered under the Registration of Titles Act.
+- "alienated" means alienated by the grant of an estate in freehold or leasehold which is registered under the Registration of Titles Act (Chapter 240).
 - "bona fide occupant" and "lawful occupant" have the meanings assigned to them in section 29.
 - "customary tenure" means a system of land tenure regulated by customary rules which are limited in their operation to a particular description or class of persons.
 - "freehold land tenure" means the holding of registered land in perpetuity subject to statutory and common law qualifications.
