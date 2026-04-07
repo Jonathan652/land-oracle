@@ -290,7 +290,13 @@ export default function App() {
       setRecordingDuration(0);
 
       timerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
+        setRecordingDuration(prev => {
+          if (prev >= 120) { // 2 minute limit
+            stopRecording();
+            return prev;
+          }
+          return prev + 1;
+        });
       }, 1000);
 
       mediaRecorder.ondataavailable = (event) => {
@@ -363,6 +369,8 @@ export default function App() {
   };
 
   const processAudioMessage = async (audioBlob: Blob) => {
+    if (isTranscribing) return;
+    
     setIsLoading(true);
     setIsTranscribing(true);
     
@@ -377,12 +385,32 @@ export default function App() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.readAsDataURL(audioBlob);
-    reader.onloadend = async () => {
-      const base64Audio = (reader.result as string).split(',')[1];
-      
-      // 1. Create placeholder user message
+    try {
+      if (audioBlob.size > 15 * 1024 * 1024) { // 15MB limit
+        throw new Error("Audio file is too large. Please record a shorter message.");
+      }
+
+      // 1. Convert blob to base64
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          if (!result) {
+            reject(new Error("Failed to read audio blob"));
+            return;
+          }
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+
+      if (!base64Audio || base64Audio.length < 100) {
+        throw new Error("Audio data is too short or empty.");
+      }
+
+      // 2. Create placeholder user message
       const userMessageId = generateId();
       const userMessage: Message = {
         id: userMessageId,
@@ -393,126 +421,148 @@ export default function App() {
       
       updateSessionMessages(prev => [...prev, userMessage]);
 
-      try {
-        if (!navigator.onLine) {
-          throw new Error("No internet connection.");
-        }
-        if (!base64Audio || base64Audio.length < 100) {
-          throw new Error("Audio data is too short or empty.");
-        }
+      if (!navigator.onLine) {
+        throw new Error("No internet connection.");
+      }
 
-        // 2. Transcribe the audio using Gemini
-        const transcriptionResponse = await ai.models.generateContent({
+      // 3. Clean mimeType for Gemini
+      let mimeType = (audioBlob.type || 'audio/webm').split(';')[0];
+      if (mimeType.includes('mp4') || mimeType.includes('aac') || mimeType.includes('m4a')) {
+        mimeType = 'audio/mp4';
+      } else if (mimeType.includes('webm')) {
+        mimeType = 'audio/webm';
+      } else if (mimeType.includes('ogg')) {
+        mimeType = 'audio/ogg';
+      } else if (mimeType.includes('wav')) {
+        mimeType = 'audio/wav';
+      } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+        mimeType = 'audio/mp3';
+      }
+
+      // 4. Transcribe the audio using Gemini with retry logic
+      let transcriptionResponse;
+      let retries = 2;
+      while (retries >= 0) {
+        try {
+          transcriptionResponse = await ai.models.generateContent({
+            model: "gemini-3.1-pro-preview",
+            contents: { 
+              parts: [
+                { inlineData: { data: base64Audio, mimeType: mimeType } }, 
+                { text: "Please transcribe the following audio exactly as spoken. The audio is either in Luganda or English. Transcribe in the original language. Do not translate. Return ONLY the transcribed text. If no speech is detected, return '[No speech detected]'." }
+              ] 
+            },
+            config: {
+              temperature: 0.1,
+            }
+          });
+          break; // Success
+        } catch (err) {
+          if (retries === 0) throw err;
+          retries--;
+          await new Promise(r => setTimeout(r, 1000)); // Wait 1s before retry
+        }
+      }
+
+      if (!transcriptionResponse) throw new Error("Transcription failed");
+
+      const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : "[Okukyusa kulemye]");
+      
+      // 5. Update user message with transcribed text
+      updateSessionMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, content: transcribedText } : m));
+      setIsTranscribing(false);
+
+      // 6. Proceed to generate assistant response
+      const assistantMessageId = generateId();
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: "",
+        timestamp: new Date(),
+      };
+      
+      updateSessionMessages(prev => [...prev, assistantMessage]);
+
+      const systemPrompt = isDocumentMode 
+        ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
+        : SYSTEM_INSTRUCTION;
+
+      if (isStreamingMode) {
+        const stream = await ai.models.generateContentStream({
           model: "gemini-3-flash-preview",
-          contents: [{ 
+          contents: { 
             parts: [
-              { inlineData: { data: base64Audio, mimeType: audioBlob.type || 'audio/webm' } }, 
-              { text: "Transcribe the following audio precisely. The audio may be in Luganda or English. If you hear Luganda, transcribe in Luganda. If you hear English, transcribe in English. Do not translate. Provide ONLY the transcription text. If no speech is detected, return '[No speech detected]'." }
+              { text: transcribedText }
             ] 
-          }],
-          config: {
-            temperature: 0,
-          }
+          },
+          config: { 
+            systemInstruction: systemPrompt, 
+            temperature: 0.4 
+          },
         });
 
-        const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : "[Okukyusa kulemye]");
-        
-        // 3. Update user message with transcribed text
-        updateSessionMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, content: transcribedText } : m));
-        setIsTranscribing(false);
-
-        // 4. Proceed to generate assistant response
-        const assistantMessageId = generateId();
-        const assistantMessage: Message = {
-          id: assistantMessageId,
-          role: 'assistant',
-          content: "",
-          timestamp: new Date(),
-        };
-        
-        updateSessionMessages(prev => [...prev, assistantMessage]);
-
-        const systemPrompt = isDocumentMode 
-          ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-          : SYSTEM_INSTRUCTION;
-
-        if (isStreamingMode) {
-          const stream = await ai.models.generateContentStream({
-            model: "gemini-3-flash-preview",
-            contents: [{ 
-              parts: [
-                { text: transcribedText }
-              ] 
-            }],
-            config: { 
-              systemInstruction: systemPrompt, 
-              temperature: 0.4 
-            },
-          });
-
-          let fullText = "";
-          for await (const chunk of stream) {
-            fullText += chunk.text;
-            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-            
-            const container = document.documentElement;
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-            if (isNearBottom) {
-              scrollToBottom();
-            }
-          }
+        let fullText = "";
+        for await (const chunk of stream) {
+          fullText += chunk.text;
+          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
           
-          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-          setStreamingContent(prev => {
-            const next = { ...prev };
-            delete next[assistantMessageId];
-            return next;
-          });
-          speakText(fullText, assistantMessageId);
-        } else {
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: [{ 
-              parts: [
-                { text: transcribedText }
-              ] 
-            }],
-            config: { 
-              systemInstruction: systemPrompt, 
-              temperature: 0.4 
-            },
-          });
-          const fullText = response.text || "I apologize.";
-          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-          speakText(fullText, assistantMessageId);
-        }
-          
-        // Update usage
-        if (user) {
-          const userRef = doc(db, 'users', user.uid);
-          try {
-            const userSnap = await getDoc(userRef);
-            const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
-            await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
-            setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
-          } catch (error) {
-            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          const container = document.documentElement;
+          const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+          if (isNearBottom) {
+            scrollToBottom();
           }
-        } else {
-          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
         }
-      } catch (error) {
-        console.error("Voice Processing Error:", error);
-        const errorMsg = language === 'en' 
-          ? "I had trouble processing your voice note. Please ensure you have a stable connection and speak clearly." 
-          : "Nfuna obuzibu mu kuwuliriza eddoboozi lyo. Kakasa nti olina yintaneeti eyamaanyi era oyogere bulungi.";
-        const errorMessage: Message = { id: generateId(), role: 'assistant', content: errorMsg, timestamp: new Date() };
-        updateSessionMessages(prev => [...prev, errorMessage]);
-      } finally {
-        setIsLoading(false);
-        setIsTranscribing(false);
+        
+        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+        setStreamingContent(prev => {
+          const next = { ...prev };
+          delete next[assistantMessageId];
+          return next;
+        });
+        speakText(fullText, assistantMessageId);
+      } else {
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: { 
+            parts: [
+              { text: transcribedText }
+            ] 
+          },
+          config: { 
+            systemInstruction: systemPrompt, 
+            temperature: 0.4 
+          },
+        });
+        const fullText = response.text || "I apologize.";
+        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+        speakText(fullText, assistantMessageId);
       }
-    };
+        
+      // Update usage
+      if (user) {
+        const userRef = doc(db, 'users', user.uid);
+        try {
+          const userSnap = await getDoc(userRef);
+          const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
+          await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
+          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+        }
+      } else {
+        setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+      }
+    } catch (error) {
+      console.error("Voice Processing Error:", error);
+      const errorMsg = language === 'en' 
+        ? "I had trouble processing your voice note. Please ensure you have a stable connection and speak clearly." 
+        : "Nfuna obuzibu mu kuwuliriza eddoboozi lyo. Kakasa nti olina yintaneeti eyamaanyi era oyogere bulungi.";
+      const errorMessage: Message = { id: generateId(), role: 'assistant', content: errorMsg, timestamp: new Date() };
+      updateSessionMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+      setIsTranscribing(false);
+    }
   };
 
   // --- TTS Logic ---
