@@ -951,87 +951,53 @@ export default function App() {
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 z-50 px-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
-            <Scale size={24} />
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
+            <Scale size={20} className="sm:w-6 sm:h-6" />
           </div>
-          <div>
-            <h1 className="font-bold text-lg leading-tight tracking-tight">Uganda Law Oracle</h1>
-            <p className="text-[10px] text-amber-700 font-medium uppercase tracking-widest">By Jonathan Musiime</p>
+          <div className="hidden xs:block">
+            <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight truncate max-w-[120px] sm:max-w-none">Uganda Law Oracle</h1>
+            <p className="text-[9px] sm:text-[10px] text-amber-700 font-medium uppercase tracking-widest">By Jonathan Musiime</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="hidden md:flex bg-slate-100 p-1 rounded-xl mr-2">
-            <button 
-              onClick={() => setActiveTab('chat')}
-              className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-all", activeTab === 'chat' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-            >
-              <MessageSquare size={16} className="inline mr-2" />
-              {language === 'en' ? 'Oracle' : 'Oracle'}
-            </button>
-            <button 
-              onClick={() => setActiveTab('services')}
-              className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-all", activeTab === 'services' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-            >
-              <Briefcase size={16} className="inline mr-2" />
-              {language === 'en' ? 'Services' : 'Emirimu'}
-            </button>
-          </div>
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button 
             onClick={() => setShowHistory(!showHistory)}
-            className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-sm font-medium", showHistory ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
+            className={cn("flex items-center justify-center w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-full transition-colors text-sm font-medium", showHistory ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
             title={language === 'en' ? 'Chat History' : 'Ebyafaayo'}
           >
             <History size={16} />
           </button>
+          
           <button 
             onClick={() => setAutoTalkBack(!autoTalkBack)}
             className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-sm font-medium", 
+              "flex items-center justify-center w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-full transition-colors text-sm font-medium", 
               autoTalkBack ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
             )}
             title={language === 'en' ? 'Auto Talk Back' : 'Okuddamu mu ddoboozi'}
           >
             {autoTalkBack ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            <span className="hidden sm:inline">{language === 'en' ? 'Talk Back' : 'Doboozi'}</span>
+            <span className="hidden md:inline ml-2">{language === 'en' ? 'Talk Back' : 'Doboozi'}</span>
           </button>
 
           <button 
             onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-medium"
+            className="flex items-center justify-center w-9 h-9 sm:w-auto sm:px-3 sm:py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-medium"
           >
             <Languages size={16} />
-            <span className="hidden sm:inline">{language === 'en' ? 'English' : 'Luganda'}</span>
+            <span className="hidden md:inline ml-2">{language === 'en' ? 'English' : 'Luganda'}</span>
           </button>
 
-          <div className="hidden lg:flex items-center gap-2 border-l border-slate-200 pl-4 ml-2">
-            <button 
-              onClick={() => setIsStreamingMode(!isStreamingMode)}
-              className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-xs font-bold uppercase tracking-wider", isStreamingMode ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500")}
-              title="Toggle Streaming Mode"
-            >
-              <Smartphone size={14} />
-              <span>{isStreamingMode ? 'Streaming' : 'Instant'}</span>
-            </button>
-            <button 
-              onClick={() => setIsDocumentMode(!isDocumentMode)}
-              className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-xs font-bold uppercase tracking-wider", isDocumentMode ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-500")}
-              title="Toggle Document Mode"
-            >
-              <FileText size={14} />
-              <span>{isDocumentMode ? 'Doc Mode' : 'Chat Mode'}</span>
-            </button>
-          </div>
-
           {user ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-sm font-medium">
+            <div className="flex items-center gap-1 sm:gap-2">
+              <div className="flex items-center gap-2 px-2 py-1.5 sm:px-3 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-sm font-medium">
                 {user.photoURL ? (
                   <img src={user.photoURL} className="w-5 h-5 rounded-full" alt="" />
                 ) : (
                   <User size={16} />
                 )}
-                <span className="hidden sm:inline truncate max-w-[100px]">{user.displayName || user.email}</span>
+                <span className="hidden md:inline truncate max-w-[80px]">{user.displayName || user.email}</span>
               </div>
               <button 
                 onClick={() => logout()}
@@ -1044,10 +1010,10 @@ export default function App() {
           ) : (
             <button 
               onClick={() => setShowAuthModal(true)}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium shadow-sm"
+              className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium shadow-sm"
             >
               <User size={16} />
-              <span>{language === 'en' ? 'Sign In' : 'Yingira'}</span>
+              <span className="hidden xs:inline">{language === 'en' ? 'Sign In' : 'Yingira'}</span>
             </button>
           )}
         </div>
@@ -1172,13 +1138,30 @@ export default function App() {
             ) : (
               <div className="space-y-6">
                 {messages.map((m) => (
-                  <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn("flex gap-4", m.role === 'user' ? "flex-row-reverse" : "flex-row")}>
-                    <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm", m.role === 'user' ? "bg-slate-800 text-white" : "bg-amber-600 text-white")}>
-                      {m.role === 'user' ? <User size={20} /> : <Bot size={20} />}
+                  <motion.div 
+                    key={m.id} 
+                    initial={{ opacity: 0, y: 10 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    className={cn("flex gap-2 sm:gap-4", m.role === 'user' ? "flex-row-reverse" : "flex-row")}
+                  >
+                    <div className={cn("w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-sm", m.role === 'user' ? "bg-slate-800 text-white" : "bg-amber-600 text-white")}>
+                      {m.role === 'user' ? <User size={16} className="sm:w-5 sm:h-5" /> : <Bot size={16} className="sm:w-5 sm:h-5" />}
                     </div>
-                    <div className={cn("max-w-[85%] rounded-3xl p-5 shadow-sm relative group", m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800")}>
+                    <div className={cn(
+                      "max-w-[92%] sm:max-w-[85%] rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-sm relative group", 
+                      m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800"
+                    )}>
                       <div className="markdown-body prose prose-slate prose-sm max-w-none dark:prose-invert">
-                        <Markdown remarkPlugins={[remarkGfm]}>
+                        <Markdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({node, ...props}) => (
+                              <div className="table-wrapper">
+                                <table {...props} />
+                              </div>
+                            )
+                          }}
+                        >
                           {streamingContent[m.id] || m.content}
                         </Markdown>
                       </div>
@@ -1189,7 +1172,7 @@ export default function App() {
                             onClick={() => speakText(m.content, m.id)} 
                             disabled={isAudioLoading === m.id}
                             className={cn(
-                              "p-2 rounded-xl transition-all flex items-center justify-center", 
+                              "p-2 rounded-xl transition-all flex items-center justify-center min-w-[40px] min-h-[40px]", 
                               isSpeaking === m.id ? "bg-amber-100 text-amber-600" : "bg-slate-50 text-slate-400 hover:text-amber-600",
                               isAudioLoading === m.id && "animate-pulse"
                             )}
@@ -1200,7 +1183,7 @@ export default function App() {
                           <div className="flex items-center bg-slate-50 rounded-xl p-1">
                             <button 
                               onClick={() => generatePDF(m.content)}
-                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all"
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all min-h-[36px]"
                             >
                               <Download size={12} />
                               PDF
@@ -1208,7 +1191,7 @@ export default function App() {
                             <div className="w-px h-3 bg-slate-200 mx-1" />
                             <button 
                               onClick={() => generateDOCX(m.content)}
-                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all"
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all min-h-[36px]"
                             >
                               <FileText size={12} />
                               DOCX
@@ -1217,7 +1200,7 @@ export default function App() {
 
                           <button 
                             onClick={() => setActiveTab('services')}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-[10px] font-bold hover:bg-amber-100 transition-colors"
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-[10px] font-bold hover:bg-amber-100 transition-colors min-h-[36px]"
                           >
                             <Briefcase size={12} />
                             {language === 'en' ? 'Legal Help' : 'Obuyambi'}
@@ -1227,7 +1210,18 @@ export default function App() {
                     </div>
                   </motion.div>
                 ))}
-                {isLoading && <div className="flex gap-4"><div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center animate-pulse"><Bot size={20} /></div><div className="bg-white border border-slate-200 rounded-3xl rounded-tl-none p-5 flex gap-1"><span className="w-2 h-2 bg-amber-300 rounded-full animate-bounce" /><span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" /><span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" /></div></div>}
+                {isLoading && !Object.keys(streamingContent).length && (
+                  <div className="flex gap-2 sm:gap-4">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-amber-600 text-white flex items-center justify-center animate-pulse">
+                      <Bot size={16} className="sm:w-5 sm:h-5" />
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-2xl sm:rounded-3xl rounded-tl-none p-4 sm:p-5 flex gap-1 items-center">
+                      <span className="w-1.5 h-1.5 bg-amber-300 rounded-full animate-bounce" />
+                      <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+                    </div>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -1316,9 +1310,9 @@ export default function App() {
 
       {/* Input Area */}
       {activeTab === 'chat' && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#FDFCF8] via-[#FDFCF8] to-transparent z-50">
+        <div className="fixed bottom-0 left-0 right-0 p-2 sm:p-4 bg-gradient-to-t from-[#FDFCF8] via-[#FDFCF8] to-transparent z-50">
           <div className="max-w-4xl mx-auto relative">
-            <div className="bg-white rounded-[2rem] shadow-2xl shadow-slate-200 border border-slate-200 p-2 overflow-hidden">
+            <div className="bg-white rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl shadow-slate-200 border border-slate-200 p-1.5 sm:p-2 overflow-hidden">
               <AnimatePresence mode="wait">
                 {isRecording || audioPreview ? (
                   <motion.div 
@@ -1326,43 +1320,43 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
-                    className="flex items-center gap-4 px-4 py-2 w-full"
+                    className="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-2 w-full"
                   >
-                    <div className="flex items-center gap-3 flex-1">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-1">
                       <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                      <span className="text-sm font-mono font-bold text-slate-600">
+                      <span className="text-xs sm:text-sm font-mono font-bold text-slate-600">
                         {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
                       </span>
                       
-                      <div className="flex items-center h-8 flex-1 px-4">
-                        {[...Array(12)].map((_, i) => (
+                      <div className="flex items-center h-6 sm:h-8 flex-1 px-2 sm:px-4">
+                        {[...Array(8)].map((_, i) => (
                           <div key={i} className="waveform-bar" style={{ animationDelay: `${i * 0.1}s` }} />
                         ))}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       <button 
                         onClick={cancelRecording}
-                        className="p-3 text-slate-400 hover:text-red-500 transition-colors"
+                        className="p-2 sm:p-3 text-slate-400 hover:text-red-500 transition-colors"
                         title="Cancel"
                       >
-                        <X size={20} />
+                        <X size={18} className="sm:w-5 sm:h-5" />
                       </button>
                       
                       {audioPreview ? (
                         <button 
                           onClick={sendRecordedAudio}
-                          className="w-12 h-12 bg-amber-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-amber-200 hover:bg-amber-700 transition-all"
+                          className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-600 text-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-amber-200 hover:bg-amber-700 transition-all"
                         >
-                          <Send size={20} />
+                          <Send size={18} className="sm:w-5 sm:h-5" />
                         </button>
                       ) : (
                         <button 
                           onClick={stopRecording}
-                          className="w-12 h-12 bg-red-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-red-200 hover:bg-red-600 transition-all"
+                          className="w-10 h-10 sm:w-12 sm:h-12 bg-red-500 text-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-red-200 hover:bg-red-600 transition-all"
                         >
-                          <Square size={20} />
+                          <Square size={18} className="sm:w-5 sm:h-5" />
                         </button>
                       )}
                     </div>
@@ -1373,7 +1367,7 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
-                    className="flex items-center gap-2 w-full"
+                    className="flex items-center gap-1 sm:gap-2 w-full"
                   >
                     <button 
                       onMouseDown={() => {
@@ -1384,21 +1378,23 @@ export default function App() {
                         setIsHoldingToRecord(false);
                         stopRecording();
                       }}
-                      onTouchStart={() => {
+                      onTouchStart={(e) => {
+                        e.preventDefault();
                         setIsHoldingToRecord(true);
                         startRecording();
                       }}
-                      onTouchEnd={() => {
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
                         setIsHoldingToRecord(false);
                         stopRecording();
                       }}
                       className={cn(
-                        "w-12 h-12 rounded-2xl flex items-center justify-center transition-all relative",
+                        "w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all relative",
                         isHoldingToRecord ? "bg-amber-100 text-amber-600 scale-110" : "bg-slate-50 text-slate-500 hover:bg-slate-100"
                       )}
                       title="Hold to record"
                     >
-                      <Mic size={20} />
+                      <Mic size={18} className="sm:w-5 sm:h-5" />
                     </button>
                     
                     <input 
@@ -1406,25 +1402,25 @@ export default function App() {
                       value={input} 
                       onChange={(e) => setInput(e.target.value)} 
                       onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
-                      placeholder={language === 'en' ? "Ask about the laws of Uganda..." : "Buuza ku mateeka ga Uganda..."} 
-                      className="flex-1 bg-transparent border-none focus:ring-0 px-4 py-3 text-slate-800 text-sm sm:text-base" 
+                      placeholder={language === 'en' ? "Ask about the laws..." : "Buuza ku mateeka..."} 
+                      className="flex-1 bg-transparent border-none focus:ring-0 px-2 sm:px-4 py-2 sm:py-3 text-slate-800 text-sm sm:text-base" 
                     />
                     
                     <button 
                       onClick={() => handleSend()} 
                       disabled={!input.trim() || isLoading} 
-                      className="w-12 h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"
+                      className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-xl sm:rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"
                     >
-                      <Send size={20} />
+                      <Send size={18} className="sm:w-5 sm:h-5" />
                     </button>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
             
-            <div className="flex items-center justify-center gap-4 mt-3">
-              <div className="flex items-center gap-2 px-3 py-1 bg-white/50 backdrop-blur-sm rounded-full border border-slate-200/50">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Speed</span>
+            <div className="flex items-center justify-between gap-4 mt-2 px-2">
+              <div className="flex items-center gap-2 px-2 py-0.5 bg-white/50 backdrop-blur-sm rounded-full border border-slate-200/50">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Speed</span>
                 <input 
                   type="range" 
                   min="10" 
@@ -1432,12 +1428,23 @@ export default function App() {
                   step="10"
                   value={streamingSpeed}
                   onChange={(e) => setStreamingSpeed(parseInt(e.target.value))}
-                  className="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                  className="w-12 sm:w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
                 />
               </div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                Oracle Beta • {isDocumentMode ? 'Document Mode' : 'Chat Mode'}
-              </p>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setIsStreamingMode(!isStreamingMode)}
+                  className={cn("text-[9px] font-bold uppercase tracking-widest transition-colors", isStreamingMode ? "text-blue-600" : "text-slate-400")}
+                >
+                  {isStreamingMode ? 'Streaming' : 'Instant'}
+                </button>
+                <button 
+                  onClick={() => setIsDocumentMode(!isDocumentMode)}
+                  className={cn("text-[9px] font-bold uppercase tracking-widest transition-colors", isDocumentMode ? "text-purple-600" : "text-slate-400")}
+                >
+                  {isDocumentMode ? 'Doc Mode' : 'Chat'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

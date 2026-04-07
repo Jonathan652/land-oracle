@@ -39,7 +39,15 @@
   }
 
   .markdown-body table {
-    @apply w-full border-collapse mb-6 overflow-hidden rounded-xl border border-slate-200 shadow-sm;
+    @apply w-full border-collapse mb-6 border border-slate-200 shadow-sm;
+  }
+
+  .table-wrapper {
+    @apply overflow-x-auto w-full mb-6 rounded-xl border border-slate-200;
+  }
+
+  .table-wrapper table {
+    @apply mb-0 border-0;
   }
 
   .markdown-body thead {
