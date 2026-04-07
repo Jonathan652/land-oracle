@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type, FunctionDeclaration } from "@google/genai";
 import { 
   MessageSquare, 
   Send, 
@@ -84,7 +84,10 @@ STRICT BEHAVIOR RULES:
 7. Be concise but include enough depth for full understanding.
 8. Adapt your explanation based on the user's level (beginner to advanced).
 9. Focus on solving the user’s problem, not just explaining concepts.
-10. When generating documents, format them professionally as if they are ready for submission.
+10. DOCUMENT GENERATION: When a user explicitly asks for a document (PDF or DOCX), use the "generateLegalDocument" tool. 
+    - The content passed to the tool MUST be the final legal document ONLY.
+    - DO NOT include any introductions, greetings, or conversational filler in the document content.
+    - Start directly with the title or the first clause.
 11. Before answering, internally analyze the user's intent and choose the best format (explanation, steps, document, or template). Then produce ONLY the final polished output.
 
 STRICT LEGAL ADHERENCE & DEPTH:
@@ -832,6 +835,31 @@ export default function App() {
     handleSend(text);
   };
 
+  const generateLegalDocumentTool: FunctionDeclaration = {
+    name: "generateLegalDocument",
+    description: "Generates a downloadable legal document (PDF or DOCX) based on the provided content.",
+    parameters: {
+      type: Type.OBJECT,
+      description: "The parameters for document generation.",
+      properties: {
+        content: {
+          type: Type.STRING,
+          description: "The full text content of the legal document. Exclude all conversational filler, greetings, and meta-commentary."
+        },
+        format: {
+          type: Type.STRING,
+          enum: ["pdf", "docx"],
+          description: "The file format for the document."
+        },
+        title: {
+          type: Type.STRING,
+          description: "A professional title for the document."
+        }
+      },
+      required: ["content", "format", "title"]
+    }
+  };
+
   const handleSend = async (textOverride?: string) => {
     const messageText = textOverride || input;
     if (!messageText.trim() || isLoading) return;
@@ -864,19 +892,49 @@ export default function App() {
         ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
         : SYSTEM_INSTRUCTION;
 
+      const modelConfig = { 
+        systemInstruction: systemPrompt,
+        temperature: 0.4,
+        maxOutputTokens: 2048,
+        tools: [{ functionDeclarations: [generateLegalDocumentTool] }]
+      };
+
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
           model: "gemini-3-flash-preview",
-          contents: [{ role: 'user', parts: [{ text: messageText }] }],
-          config: { 
-            systemInstruction: systemPrompt,
-            temperature: 0.4,
-            maxOutputTokens: 2048
-          },
+          contents: updatedMessages.map(m => ({
+            role: m.role,
+            parts: [{ text: m.content }]
+          })),
+          config: modelConfig,
         });
 
         let fullText = "";
+        let hasToolCall = false;
+
         for await (const chunk of stream) {
+          if (chunk.functionCalls) {
+            hasToolCall = true;
+            for (const call of chunk.functionCalls) {
+              if (call.name === "generateLegalDocument") {
+                const { content, format, title } = call.args as any;
+                if (format === 'pdf') {
+                  generatePDF(content, title);
+                } else {
+                  generateDOCX(content, title);
+                }
+                
+                const successMsg = language === 'en' 
+                  ? `✅ I have generated your ${format.toUpperCase()} document: "${title}". It should be downloading now.`
+                  : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: "${title}". Kirina okuba nga kitandise okwetikka.`;
+                
+                fullText += successMsg;
+                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+              }
+            }
+            continue;
+          }
+
           fullText += chunk.text;
           setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
           
@@ -896,23 +954,46 @@ export default function App() {
           return next;
         });
         
-        if (autoTalkBack) {
+        if (autoTalkBack && !hasToolCall) {
           speakText(fullText, assistantMessageId);
         }
       } else {
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: [{ role: 'user', parts: [{ text: messageText }] }],
-          config: { 
-            systemInstruction: systemPrompt,
-            temperature: 0.4,
-            maxOutputTokens: 2048
-          },
+          contents: updatedMessages.map(m => ({
+            role: m.role,
+            parts: [{ text: m.content }]
+          })),
+          config: modelConfig,
         });
-        assistantMessage.content = response.text || "I apologize.";
+
+        let fullText = response.text || "";
+        let hasToolCall = false;
+
+        if (response.functionCalls) {
+          hasToolCall = true;
+          for (const call of response.functionCalls) {
+            if (call.name === "generateLegalDocument") {
+              const { content, format, title } = call.args as any;
+              if (format === 'pdf') {
+                generatePDF(content, title);
+              } else {
+                generateDOCX(content, title);
+              }
+              
+              const successMsg = language === 'en' 
+                ? `✅ I have generated your ${format.toUpperCase()} document: "${title}". It should be downloading now.`
+                : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: "${title}". Kirina okuba nga kitandise okwetikka.`;
+              
+              fullText = successMsg;
+            }
+          }
+        }
+
+        assistantMessage.content = fullText;
         updateSessionMessages([...updatedMessages, assistantMessage]);
         
-        if (autoTalkBack) {
+        if (autoTalkBack && !hasToolCall) {
           speakText(assistantMessage.content, assistantMessageId);
         }
       }
@@ -1179,24 +1260,6 @@ export default function App() {
                           >
                             {isAudioLoading === m.id ? <Loader2 size={18} className="animate-spin" /> : (isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />)}
                           </button>
-                          
-                          <div className="flex items-center bg-slate-50 rounded-xl p-1">
-                            <button 
-                              onClick={() => generatePDF(m.content)}
-                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all min-h-[36px]"
-                            >
-                              <Download size={12} />
-                              PDF
-                            </button>
-                            <div className="w-px h-3 bg-slate-200 mx-1" />
-                            <button 
-                              onClick={() => generateDOCX(m.content)}
-                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-white hover:shadow-sm transition-all min-h-[36px]"
-                            >
-                              <FileText size={12} />
-                              DOCX
-                            </button>
-                          </div>
 
                           <button 
                             onClick={() => setActiveTab('services')}
