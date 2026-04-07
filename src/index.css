@@ -8,6 +8,15 @@
 }
 
 @layer base {
+  html, body, #root {
+    @apply h-full overflow-hidden bg-[#F8FAFC];
+  }
+
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-left { padding-left: env(safe-area-inset-left); }
+  .safe-right { padding-right: env(safe-area-inset-right); }
+
   .markdown-body {
     @apply text-slate-700 leading-relaxed font-sans;
   }

@@ -903,10 +903,10 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "bg-[#0B0F1A] text-slate-400 w-72 sm:w-80 flex-shrink-0 flex flex-col transition-all duration-300 border-r border-white/5 z-50 fixed inset-y-0 lg:relative shadow-2xl",
+        "bg-[#0B0F1A] text-slate-400 w-72 sm:w-80 flex-shrink-0 flex flex-col transition-all duration-300 border-r border-white/5 z-50 fixed inset-y-0 lg:relative shadow-2xl safe-left",
         !isSidebarOpen && "-translate-x-full lg:-ml-80"
       )}>
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+        <div className="p-5 sm:p-6 border-b border-white/5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-[#C5A059] rounded-xl flex items-center justify-center text-[#0B0F1A] shadow-lg shadow-[#C5A059]/10">
               <Scale size={22} />
@@ -972,7 +972,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-4 border-t border-white/5 bg-black/20">
+        <div className="p-4 border-t border-white/5 bg-black/20 shrink-0">
           {user ? (
             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
               <div className="flex items-center gap-3 min-w-0">
@@ -1003,10 +1003,14 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col relative overflow-hidden">
         {/* Header */}
-        <header className="h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 shrink-0 z-30 shadow-sm">
+        <header className="h-auto min-h-[3.5rem] sm:min-h-[4rem] bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 shrink-0 z-30 shadow-sm safe-top">
           <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors">
-              <Menu size={18} className="sm:w-5 sm:h-5" />
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+              className="p-2.5 sm:p-2 hover:bg-slate-50 rounded-lg text-slate-900 sm:text-slate-500 transition-colors active:scale-95"
+              aria-label="Toggle Menu"
+            >
+              <Menu size={22} className="sm:w-5 sm:h-5" />
             </button>
             <div className="h-6 w-px bg-slate-200 hidden xs:block" />
             <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-1">
@@ -1221,7 +1225,7 @@ export default function App() {
 
       {/* Input Area */}
       {activeTab === 'chat' && (
-        <footer className="p-3 sm:p-8 bg-white border-t border-slate-100 shrink-0 z-30">
+        <footer className="p-3 sm:p-8 bg-white border-t border-slate-100 shrink-0 z-30 safe-bottom">
           <div className="max-w-4xl mx-auto">
             <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-end gap-2 sm:gap-6">
               <div className="flex-1 relative bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200 focus-within:border-[#C5A059] focus-within:ring-4 sm:focus-within:ring-8 focus-within:ring-[#C5A059]/5 transition-all">
@@ -1295,7 +1299,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 max-h-[90vh] overflow-y-auto safe-top safe-bottom"
             >
               <div className="p-6 sm:p-10">
                 <div className="flex justify-between items-center mb-6 sm:mb-10">

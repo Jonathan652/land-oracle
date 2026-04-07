@@ -16,9 +16,9 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-100"
+            className="bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-100 max-h-[90vh] flex flex-col safe-top safe-bottom"
           >
-            <div className="bg-[#0B0F1A] p-6 sm:p-8 text-white flex items-center gap-4 sm:gap-6">
+            <div className="bg-[#0B0F1A] p-5 sm:p-8 text-white flex items-center gap-4 sm:gap-6 shrink-0">
               <div className="p-3 sm:p-4 bg-[#C5A059] rounded-xl sm:rounded-2xl text-[#0B0F1A] shadow-xl shadow-[#C5A059]/10 shrink-0">
                 <ShieldCheck className="w-6 h-6 sm:w-8 sm:h-8" />
               </div>
@@ -28,7 +28,7 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
               </div>
             </div>
 
-            <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 flex-1 overflow-y-auto custom-scrollbar">
               <div className="flex gap-4 sm:gap-5 items-start p-4 sm:p-6 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100">
                 <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-[#C5A059] shrink-0 mt-1" />
                 <div className="text-xs sm:text-sm text-slate-700 leading-relaxed">
@@ -57,7 +57,7 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
               </div>
             </div>
 
-            <div className="p-6 sm:p-8 bg-slate-50/50 border-t border-slate-100 flex justify-end">
+            <div className="p-5 sm:p-8 bg-slate-50/50 border-t border-slate-100 flex justify-end shrink-0">
               <button
                 onClick={onAccept}
                 className="w-full sm:w-auto flex items-center justify-center gap-3 bg-[#0B0F1A] hover:bg-black text-[#C5A059] px-6 sm:px-10 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-bold transition-all shadow-2xl shadow-black/10 active:scale-[0.98] text-sm sm:text-base"
