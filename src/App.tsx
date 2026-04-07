@@ -25,109 +25,33 @@ import {
   ExternalLink,
   CheckCircle2,
   X,
-  Smartphone
+  Smartphone,
+  Search,
+  Filter,
+  ArrowRight,
+  LayoutDashboard,
+  FileSearch,
+  ShieldAlert,
+  Menu,
+  MoreVertical,
+  Trash2,
+  Archive,
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { jsPDF } from 'jspdf';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
-import { saveAs } from 'file-saver';
 import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { UGANDA_LAND_ACT_CONTEXT } from './constants/landActText';
-import { ADDITIONAL_LAWS_CONTEXT } from './constants/additionalLaws';
-import { LANDMARK_LAND_CASES_CONTEXT } from './constants/landCases';
-import { UGANDA_CONSTITUTION_CONTEXT } from './constants/constitutionText';
 import { cn } from './lib/utils';
-
-// --- Types ---
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  audioBuffer?: AudioBuffer; // Cache the processed audio
-}
-
-interface ChatSession {
-  id: string;
-  title: string;
-  messages: Message[];
-  lastUpdated: Date;
-}
-
-interface Lawyer {
-  id: string;
-  name: string;
-  firm: string;
-  specialty: string;
-  location: string;
-  rating: number;
-  verified: boolean;
-}
+import { Message, ChatSession, Lawyer } from './types';
+import { SYSTEM_INSTRUCTION, MOCK_LAWYERS } from './constants/systemInstructions';
+import { generatePDF, generateDOCX } from './lib/documentService';
+import { LegalNoticeModal } from './components/LegalNoticeModal';
 
 // --- Oracle Core ---
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
-const SYSTEM_INSTRUCTION = `
-You are the "Uganda Law Oracle," a highly intelligent, professional senior legal expert designed to produce clear, structured, and human-like responses regarding the Constitution and Laws of Uganda.
-
-STRICT BEHAVIOR RULES:
-1. NEVER mention that you are an AI or use phrases like "as an AI" or "AI model".
-2. ALWAYS produce clean, final-form outputs that can be directly used in assignments, reports, or presentations.
-3. AVOID meta-commentary such as "here is your answer", "as requested", or "I hope this helps".
-4. Use a natural, confident, and human-like tone. Behave like an expert human assistant.
-5. Structure responses with clear headings, bullet points, and logical flow.
-6. Break down complex legal ideas into simple, easy-to-understand steps.
-7. Be concise but include enough depth for full understanding.
-8. Adapt your explanation based on the user's level (beginner to advanced).
-9. Focus on solving the user’s problem, not just explaining concepts.
-10. DOCUMENT GENERATION: When a user explicitly asks for a document (PDF or DOCX), use the "generateLegalDocument" tool. 
-    - The content passed to the tool MUST be the final legal document ONLY.
-    - DO NOT include any introductions, greetings, or conversational filler in the document content.
-    - Start directly with the title or the first clause.
-11. Before answering, internally analyze the user's intent and choose the best format (explanation, steps, document, or template). Then produce ONLY the final polished output.
-
-STRICT ACCURACY & GROUNDING:
-- **SOURCE-ONLY KNOWLEDGE**: You are a specialized Oracle for Ugandan Land Law. Your primary knowledge MUST come from the provided CONTEXT. You MUST prioritize the CONTEXT over your general training data for all statutory references, chapter numbers, and legal principles.
-- **ZERO TOLERANCE FOR HALLUCINATION**: You MUST NOT guess, infer, or hallucinate numbers, dates, or legal provisions. If a specific detail (like a Chapter number or a specific Section) is not explicitly mentioned in the CONTEXT, you MUST state: "This specific detail is not available in my current legal database" rather than providing a potentially incorrect number.
-- **MANDATORY VERIFICATION PASS**: Before generating any response, you MUST perform a three-step internal verification:
-    1. **Identify**: List all legal references you intend to use.
-    2. **Verify**: Locate each reference in the CONTEXT below and confirm the exact wording and numbering.
-    3. **Correct**: If your internal knowledge contradicts the CONTEXT (e.g., a different Chapter number), you MUST use the number provided in the CONTEXT.
-- **EXPLICIT CITATIONS**: Every legal statement MUST be followed by its specific source from the CONTEXT (e.g., "Section 39 of the Land Act (Cap 236)" or "Article 237 of the Constitution").
-- **PRECISION**: Legal accuracy is your highest priority. A single incorrect digit in a Chapter or Section number is considered a critical failure.
-- **BILINGUAL INTEGRITY**: Luganda translations must maintain the exact same legal precision and numbering as the English text. Never simplify a legal reference in translation.
-- Use ULII (ulii.org) as your primary reference for Ugandan legislation and case law.
-- Reference landmark Ugandan cases to support your guidance.
-
-BILINGUAL EXPERTISE:
-- You are fully bilingual in English and Luganda. Respond in the language used by the user.
-- Ensure your Luganda explanations are as detailed and professional as your English ones.
-
-OUTPUT STYLE:
-- Use clean formatting (headings, lists, spacing).
-- Avoid unnecessary repetition.
-- Prioritize clarity over complexity.
-- Always include a clear disclaimer at the very end: "For guidance only—not legal advice. Consult a lawyer for specific cases."
-
-CONTEXT:
-${UGANDA_CONSTITUTION_CONTEXT}
-
-${UGANDA_LAND_ACT_CONTEXT}
-
-${ADDITIONAL_LAWS_CONTEXT}
-
-${LANDMARK_LAND_CASES_CONTEXT}
-`;
-
-const MOCK_LAWYERS: Lawyer[] = [
-  { id: '1', name: 'Adv. Namukasa Sarah', firm: 'Justice Land Advocates', specialty: 'Land Disputes & Mediation', location: 'Kampala, Central', rating: 4.9, verified: true },
-  { id: '2', name: 'Adv. Okello John', firm: 'Northern Rights Legal', specialty: 'Customary Tenure & Titles', location: 'Gulu, Northern', rating: 4.7, verified: true },
-  { id: '3', name: 'Adv. Musoke Peter', firm: 'Mailo Land Experts', specialty: 'Mailo & Freehold Conversion', location: 'Masaka, Central', rating: 4.8, verified: true },
-];
 
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
@@ -159,7 +83,6 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const [isAudioLoading, setIsAudioLoading] = useState<string | null>(null);
   const [audioCache, setAudioCache] = useState<Record<string, AudioBuffer>>({});
-  const [activeTab, setActiveTab] = useState<'chat' | 'services'>('chat');
   const [showHistory, setShowHistory] = useState(false);
   const [freeQuestionsRemaining, setFreeQuestionsRemaining] = useState(2);
   const [voiceMessagesRemaining, setVoiceMessagesRemaining] = useState(0);
@@ -190,85 +113,20 @@ export default function App() {
   const [audioPreview, setAudioPreview] = useState<string | null>(null);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [streamingContent, setStreamingContent] = useState<Record<string, string>>({});
+  const [showLegalNotice, setShowLegalNotice] = useState(() => {
+    return localStorage.getItem('uganda_law_portal_legal_notice_accepted') !== 'true';
+  });
+  const [verificationSteps, setVerificationSteps] = useState<string[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<'chat' | 'lawyers' | 'documents' | 'services'>('chat');
 
-  const generatePDF = (content: string, title: string) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 20;
-    const maxWidth = pageWidth - (margin * 2);
-
-    // Content
-    doc.setTextColor(30, 41, 59); // Slate 800
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    
-    // Clean markdown for PDF (simple version)
-    const cleanContent = content
-      .replace(/[#*`]/g, '')
-      .replace(/\n\s*\n/g, '\n\n');
-
-    const splitText = doc.splitTextToSize(cleanContent, maxWidth);
-    const pageHeight = doc.internal.pageSize.getHeight();
-    let cursorY = 20;
-
-    for (let i = 0; i < splitText.length; i++) {
-      if (cursorY > pageHeight - 30) {
-        doc.addPage();
-        cursorY = 20;
-      }
-      doc.text(splitText[i], margin, cursorY);
-      cursorY += 7; // Line height
-    }
-
-    // Footer Disclaimer
-    doc.setDrawColor(226, 232, 240); // Slate 200
-    doc.line(margin, pageHeight - 25, pageWidth - margin, pageHeight - 25);
-    
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    const disclaimer = "For guidance only—not legal advice. Consult a lawyer for specific cases.";
-    const splitDisclaimer = doc.splitTextToSize(disclaimer, maxWidth);
-    doc.text(splitDisclaimer, margin, pageHeight - 15);
-
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
-    
-    // Trigger download
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${title.replace(/\s+/g, '_')}.pdf`;
-    link.click();
-    
-    return url;
+  const handleAcceptLegalNotice = () => {
+    localStorage.setItem('uganda_law_portal_legal_notice_accepted', 'true');
+    setShowLegalNotice(false);
   };
 
-  const generateDOCX = async (content: string, title: string) => {
-    const doc = new Document({
-      sections: [{
-        properties: {},
-        children: [
-          ...content.split('\n').map(line => new Paragraph({
-            children: [new TextRun(line.replace(/[#*`]/g, ''))],
-            spacing: { before: 200 },
-          })),
-          new Paragraph({ text: "" }),
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: "Disclaimer: For guidance only—not legal advice. Consult a lawyer for specific cases.",
-                italics: true,
-                size: 16,
-              }),
-            ],
-          }),
-        ],
-      }],
-    });
-
-    const blob = await Packer.toBlob(doc);
-    const url = URL.createObjectURL(blob);
-    saveAs(blob, `${title.replace(/\s+/g, '_')}.docx`);
-    return url;
+  const addVerificationStep = (step: string) => {
+    setVerificationSteps(prev => [...prev, step]);
   };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -857,8 +715,11 @@ export default function App() {
     
     if (!textOverride) setInput('');
     setIsLoading(true);
+    setVerificationSteps([]);
 
     try {
+      addVerificationStep(language === 'en' ? "Analyzing legal intent..." : "Okukebera ekigendererwa...");
+      
       const assistantMessageId = (Date.now() + 1).toString();
       const assistantMessage: Message = {
         id: assistantMessageId,
@@ -882,6 +743,12 @@ export default function App() {
         tools: [{ functionDeclarations: [generateLegalDocumentTool] }]
       };
 
+      addVerificationStep(language === 'en' ? "Scanning Constitution & Statutes..." : "Okukebera ensengeka y'eggwanga n'amateeka...");
+      await new Promise(r => setTimeout(r, 800));
+      
+      addVerificationStep(language === 'en' ? "Verifying statutory references..." : "Okukakasa ebiwandiiko by'amateeka...");
+      await new Promise(r => setTimeout(r, 600));
+
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
           model: "gemini-3-flash-preview",
@@ -895,6 +762,8 @@ export default function App() {
         let fullText = "";
         let hasToolCall = false;
 
+        addVerificationStep(language === 'en' ? "Finalizing professional response..." : "Okumaliriza okuddamu...");
+
         for await (const chunk of stream) {
           if (chunk.functionCalls) {
             hasToolCall = true;
@@ -904,8 +773,8 @@ export default function App() {
                 const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
                 
                 const successMsg = language === 'en' 
-                  ? `✅ I have generated your ${format.toUpperCase()} document: **${title}**.\n\n[Click here to download/view ${format.toUpperCase()}](${url})`
-                  : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: **${title}**.\n\n[Wano okutwala/okulaba ${format.toUpperCase()}](${url})`;
+                  ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                  : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
                 
                 fullText += successMsg;
                 setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
@@ -957,8 +826,8 @@ export default function App() {
               const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
               
               const successMsg = language === 'en' 
-                ? `✅ I have generated your ${format.toUpperCase()} document: **${title}**.\n\n[Click here to download/view ${format.toUpperCase()}](${url})`
-                : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: **${title}**.\n\n[Wano okutwala/okulaba ${format.toUpperCase()}](${url})`;
+                ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
               
               fullText = successMsg;
             }
@@ -996,743 +865,457 @@ export default function App() {
   };
 
   const quickQuestions = [
-    { en: "What are my fundamental rights?", lg: "Eddembe lyange ery'obuntu lye liruwa?" },
-    { en: "What are the duties of a citizen?", lg: "Obuvunaanyizibwa bw'omunnauganda bwe buluwa?" },
-    { en: "How do I protect my employment rights?", lg: "Nnyinza ntya okukuuma eddembe lyange ku mulimu?" },
-    { en: "What does the law say about marriage?", lg: "Amateeka gagamba ki ku bufumbo?" },
+    { en: "What are the fundamental rights in the Constitution?", lg: "Biki eby'obuntu ebiri mu nsonga z'eggwanga?" },
+    { en: "Explain the process of filing a civil suit in Uganda", lg: "Nnyonnyola enkola y'okuwaaba omusango mu Uganda" },
+    { en: "What are the requirements for a valid contract?", lg: "Biki ebyetaagisa endagaano okuba entuufu?" },
+    { en: "Draft a formal demand letter for breach of contract", lg: "Kola ebbaluwa ey'okusaba obusasuzi olw'okumenya endagaano" },
   ];
 
   return (
-    <div className="min-h-screen bg-[#FDFCF8] text-slate-900 font-sans selection:bg-amber-100">
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 z-50 px-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
-            <Scale size={20} className="sm:w-6 sm:h-6" />
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans selection:bg-amber-100">
+      <LegalNoticeModal isOpen={showLegalNotice} onAccept={handleAcceptLegalNotice} />
+      
+      {/* Sidebar */}
+      <aside className={cn(
+        "bg-slate-900 text-slate-300 w-80 flex-shrink-0 flex flex-col transition-all duration-300 border-r border-slate-800 z-40 fixed inset-y-0 lg:relative",
+        !isSidebarOpen && "-translate-x-full lg:-ml-80"
+      )}>
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-900/40">
+              <Scale size={22} />
+            </div>
+            <div>
+              <h1 className="font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Portal</h1>
+              <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest">Legal Information System</p>
+            </div>
           </div>
-          <div className="hidden xs:block">
-            <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight truncate max-w-[120px] sm:max-w-none">Uganda Law Oracle</h1>
-            <p className="text-[9px] sm:text-[10px] text-amber-700 font-medium uppercase tracking-widest">By Jonathan Musiime</p>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-slate-800 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
+          <button 
+            onClick={() => {
+              const newSession: ChatSession = {
+                id: Date.now().toString(),
+                title: language === 'en' ? 'New Inquiry' : 'Okubuuza Okupya',
+                messages: [],
+                lastUpdated: new Date(),
+                category: 'General'
+              };
+              setSessions(prev => [newSession, ...prev]);
+              setCurrentSessionId(newSession.id);
+            }}
+            className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-amber-900/20 transition-all active:scale-95"
+          >
+            <MessageSquare size={18} />
+            {language === 'en' ? 'New Legal Inquiry' : 'Okubuuza Okupya'}
+          </button>
+
+          <div className="space-y-1">
+            <p className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Recent Inquiries</p>
+            {sessions.map(session => (
+              <div 
+                key={session.id}
+                onClick={() => setCurrentSessionId(session.id)}
+                className={cn(
+                  "group p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-3",
+                  currentSessionId === session.id ? "bg-slate-800 text-white shadow-inner" : "hover:bg-slate-800/50"
+                )}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={cn("w-2 h-2 rounded-full shrink-0", currentSessionId === session.id ? "bg-amber-500" : "bg-slate-700")} />
+                  <p className="text-sm font-medium truncate">{session.title}</p>
+                </div>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(language === 'en' ? 'Delete this conversation?' : 'Ggyamu mboozi eno?')) {
+                      setSessions(prev => prev.filter(s => s.id !== session.id));
+                      if (currentSessionId === session.id) setCurrentSessionId(null);
+                    }
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 hover:text-red-400 transition-all hover:bg-slate-700 rounded-lg"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-3">
-          <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className={cn("flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 rounded-xl transition-all text-sm font-medium", showHistory ? "bg-amber-600 text-white shadow-lg shadow-amber-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
-            title={language === 'en' ? 'Chat History' : 'Ebyafaayo'}
-          >
-            <History size={18} />
-            <span className="hidden lg:inline ml-2">{language === 'en' ? 'History' : 'Ebyafaayo'}</span>
-          </button>
-          
-          <button 
-            onClick={() => setAutoTalkBack(!autoTalkBack)}
-            className={cn(
-              "flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 rounded-xl transition-all text-sm font-medium", 
-              autoTalkBack ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-            )}
-            title={language === 'en' ? 'Auto Talk Back' : 'Okuddamu mu ddoboozi'}
-          >
-            {autoTalkBack ? <Volume2 size={18} /> : <VolumeX size={18} />}
-            <span className="hidden lg:inline ml-2">{language === 'en' ? 'Talk Back' : 'Doboozi'}</span>
-          </button>
-
-          <button 
-            onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
-            className="flex items-center justify-center w-10 h-10 sm:w-auto sm:px-4 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all text-sm font-medium text-slate-600"
-          >
-            <Languages size={18} />
-            <span className="hidden lg:inline ml-2">{language === 'en' ? 'English' : 'Luganda'}</span>
-          </button>
-
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
           {user ? (
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-2 px-2 py-2 sm:px-4 rounded-xl bg-amber-50 text-amber-700 border border-amber-100 text-sm font-bold shadow-sm">
-                {user.photoURL ? (
-                  <img src={user.photoURL} className="w-6 h-6 rounded-lg" alt="" />
-                ) : (
-                  <User size={18} />
-                )}
-                <span className="hidden xl:inline truncate max-w-[100px]">{user.displayName || user.email}</span>
+            <div className="flex items-center justify-between p-3 bg-slate-800 rounded-xl border border-slate-700">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-amber-600 flex items-center justify-center text-white font-bold shrink-0 overflow-hidden">
+                  {user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.[0] || user.email?.[0]}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white truncate">{user.displayName || user.email.split('@')[0]}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+                </div>
               </div>
-              <button 
-                onClick={() => logout()}
-                className="p-2.5 text-slate-400 hover:text-red-500 transition-colors bg-slate-50 rounded-xl"
-                title={language === 'en' ? 'Logout' : 'Fuluma'}
-              >
-                <X size={20} />
+              <button onClick={() => logout()} className="p-2 hover:text-red-400 transition-colors">
+                <X size={16} />
               </button>
             </div>
           ) : (
             <button 
               onClick={() => setShowAuthModal(true)}
-              className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-all text-sm font-bold shadow-lg shadow-amber-200"
+              className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 border border-slate-700 transition-all"
             >
               <User size={18} />
-              <span className="hidden sm:inline">{language === 'en' ? 'Sign In' : 'Yingira'}</span>
+              {language === 'en' ? 'Sign In for Pro' : 'Yingira'}
             </button>
           )}
         </div>
-      </nav>
+      </aside>
 
-      <main className="pt-20 pb-32 max-w-4xl mx-auto px-4 relative">
-        <AnimatePresence>
-          {voiceError && (
-            <motion.div 
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 50 }}
-              className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700"
-            >
-              <VolumeX size={18} className="text-amber-400" />
-              <span className="text-sm font-medium">{voiceError}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* History Sidebar/Overlay */}
-        <AnimatePresence>
-          {showHistory && (
-            <motion.div 
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="fixed inset-y-0 left-0 w-full md:w-80 bg-white shadow-2xl z-[60] border-r border-slate-200 p-6 pt-20 overflow-y-auto"
-            >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="font-bold text-xl">{language === 'en' ? 'Chat History' : 'Ebyafaayo'}</h3>
-                <button onClick={() => setShowHistory(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
-              </div>
-
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col relative overflow-hidden">
+        {/* Header */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 shrink-0 z-30 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500">
+              <Menu size={20} />
+            </button>
+            <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
               <button 
-                onClick={createNewSession}
-                className="w-full py-3 px-4 bg-amber-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 mb-6 shadow-lg shadow-amber-100 hover:bg-amber-700 transition-all"
+                onClick={() => setActiveTab('chat')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-sm font-bold transition-all whitespace-nowrap",
+                  activeTab === 'chat' ? "bg-amber-100 text-amber-800" : "text-slate-500 hover:bg-slate-100"
+                )}
               >
-                <MessageSquare size={18} />
-                {language === 'en' ? 'New Chat' : 'Mboozi Mpya'}
+                {language === 'en' ? 'Legal Inquiry' : 'Okubuuza'}
               </button>
+              <button 
+                onClick={() => setActiveTab('lawyers')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-sm font-bold transition-all whitespace-nowrap",
+                  activeTab === 'lawyers' ? "bg-amber-100 text-amber-800" : "text-slate-500 hover:bg-slate-100"
+                )}
+              >
+                {language === 'en' ? 'Find Advocate' : 'Noonya Puliida'}
+              </button>
+            </div>
+          </div>
 
-              <div className="space-y-2">
-                {sessions.map(session => (
-                  <div 
-                    key={session.id}
-                    onClick={() => { setCurrentSessionId(session.id); setShowHistory(false); }}
-                    className={cn(
-                      "p-4 rounded-2xl cursor-pointer transition-all group border",
-                      currentSessionId === session.id ? "bg-amber-50 border-amber-200" : "bg-white border-transparent hover:bg-slate-50"
-                    )}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1 min-w-0">
-                        <p className={cn("font-semibold truncate", currentSessionId === session.id ? "text-amber-900" : "text-slate-700")}>
-                          {session.title}
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          {session.lastUpdated.toLocaleDateString()} • {session.messages.length} {language === 'en' ? 'messages' : 'bubaka'}
-                        </p>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setAutoTalkBack(!autoTalkBack)}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                autoTalkBack ? "text-amber-600 bg-amber-50" : "text-slate-400 hover:bg-slate-100"
+              )}
+            >
+              {autoTalkBack ? <Volume2 size={20} /> : <VolumeX size={20} />}
+            </button>
+            <button 
+              onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
+              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-600 transition-all uppercase tracking-wider"
+            >
+              {language === 'en' ? 'English' : 'Luganda'}
+            </button>
+          </div>
+        </header>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto relative scroll-smooth bg-slate-50/50 custom-scrollbar">
+          <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6">
+            <AnimatePresence>
+              {voiceError && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 50 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 50 }}
+                  className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700"
+                >
+                  <VolumeX size={18} className="text-amber-400" />
+                  <span className="text-sm font-medium">{voiceError}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+
+            {activeTab === 'chat' ? (
+              <>
+                {messages.length === 0 ? (
+                  <div className="py-12 space-y-12">
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
+                      <div className="w-20 h-20 bg-amber-100 rounded-3xl flex items-center justify-center text-amber-700 mx-auto mb-6 shadow-inner">
+                        <Scale size={40} />
                       </div>
-                      <button 
-                        onClick={(e) => deleteSession(session.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-all"
-                      >
-                        <X size={14} />
-                      </button>
+                      <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">
+                        {language === 'en' ? 'Uganda Law Portal' : 'Amateeka ga Uganda'}
+                      </h2>
+                      <p className="text-lg text-slate-600 max-w-xl mx-auto font-medium">
+                        {language === 'en' 
+                          ? 'Professional statutory guidance, document verification, and legal compliance analysis.' 
+                          : 'Okukulembera mu mateeka, okukakasa ebiwandiiko, n\'okukebera obutuufu bw\'amateeka.'}
+                      </p>
+                    </motion.div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {quickQuestions.map((q, i) => (
+                        <motion.button 
+                          key={i} 
+                          initial={{ opacity: 0, scale: 0.95 }} 
+                          animate={{ opacity: 1, scale: 1 }} 
+                          transition={{ delay: i * 0.1 }} 
+                          onClick={() => handleSend(language === 'en' ? q.en : q.lg)} 
+                          className="p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-900/5 transition-all group flex items-start gap-4"
+                        >
+                          <div className="p-3 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-amber-600 group-hover:text-white transition-all shrink-0">
+                            {i === 0 && <FileSearch size={20} />}
+                            {i === 1 && <ShieldCheck size={20} />}
+                            {i === 2 && <Gavel size={20} />}
+                            {i === 3 && <FileText size={20} />}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-800 leading-snug group-hover:text-amber-900 transition-colors">{language === 'en' ? q.en : q.lg}</p>
+                            <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                              {language === 'en' ? 'Start inquiry' : 'Tandika okubuuza'} <ArrowRight size={10} />
+                            </p>
+                          </div>
+                        </motion.button>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
-
-              {sessions.length > 0 && (
-                <button 
-                  onClick={clearAllHistory}
-                  className="w-full mt-8 py-2 text-xs text-slate-400 hover:text-red-500 transition-colors font-medium"
-                >
-                  {language === 'en' ? 'Clear All History' : 'Ggyamu byonna'}
-                </button>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {activeTab === 'chat' ? (
-          <>
-            {messages.length === 0 ? (
-              <div className="py-12 space-y-12">
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
-                  <h2 className="text-4xl font-bold text-slate-900 tracking-tight">
-                    {language === 'en' ? 'The Constitution of Uganda' : 'Ssemateeka wa Uganda'}
-                  </h2>
-                  <p className="text-lg text-slate-600 max-w-xl mx-auto">
-                    {language === 'en' ? 'Your expert guide to the Constitution and all Laws of the Republic of Uganda.' : 'Omukugu wo ku Ssemateeka n\'amateeka gonna agafuga ensi ya Uganda.'}
-                  </p>
-                </motion.div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-                  {quickQuestions.map((q, i) => (
-                    <motion.button 
-                      key={i} 
-                      initial={{ opacity: 0, scale: 0.95 }} 
-                      animate={{ opacity: 1, scale: 1 }} 
-                      transition={{ delay: i * 0.1 }} 
-                      onClick={() => handleQuickQuestion(language === 'en' ? q.en : q.lg)} 
-                      className="w-full p-5 sm:p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-50 transition-all group flex flex-col justify-between min-h-[130px] sm:min-h-[140px]"
-                    >
-                      <div className="flex justify-between items-start mb-3 sm:mb-4 w-full">
-                        <div className="p-2.5 sm:p-3 bg-amber-50 rounded-xl text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
-                          {i === 0 && <ShieldCheck size={20} className="sm:w-6 sm:h-6" />}
-                          {i === 1 && <User size={20} className="sm:w-6 sm:h-6" />}
-                          {i === 2 && <Map size={20} className="sm:w-6 sm:h-6" />}
-                          {i === 3 && <Gavel size={20} className="sm:w-6 sm:h-6" />}
+                ) : (
+                  <div className="space-y-8 pb-12">
+                    {messages.map((m) => (
+                      <motion.div 
+                        key={m.id} 
+                        initial={{ opacity: 0, y: 10 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        className={cn("flex gap-4", m.role === 'user' ? "flex-row-reverse" : "flex-row")}
+                      >
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm", 
+                          m.role === 'user' ? "bg-slate-800 text-white" : "bg-amber-600 text-white"
+                        )}>
+                          {m.role === 'user' ? <User size={20} /> : <Scale size={20} />}
                         </div>
-                        <ChevronRight size={18} className="text-slate-300 group-hover:text-amber-500 transition-colors sm:w-5 sm:h-5" />
+                        <div className={cn(
+                          "max-w-[85%] rounded-2xl p-5 sm:p-6 shadow-sm relative group transition-all", 
+                          m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800"
+                        )}>
+                          {m.role === 'assistant' && (
+                            <div className="flex items-center gap-2 mb-3 text-[10px] font-black text-amber-600 uppercase tracking-[0.2em] border-b border-amber-100 pb-2">
+                              <ShieldCheck size={12} />
+                              <span>Verified Statutory Guidance</span>
+                            </div>
+                          )}
+                          <div className="markdown-body prose prose-slate prose-sm max-w-none">
+                            <Markdown remarkPlugins={[remarkGfm]}>
+                              {streamingContent[m.id] || m.content}
+                            </Markdown>
+                          </div>
+                          <div className={cn(
+                            "text-[10px] mt-4 font-medium opacity-40",
+                            m.role === 'user' ? "text-right" : "text-left"
+                          )}>
+                            {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </>
+            ) : activeTab === 'lawyers' ? (
+              <div className="py-8 space-y-8">
+                <div className="text-center space-y-2">
+                  <h2 className="text-3xl font-bold text-slate-900">{language === 'en' ? 'Verified Legal Advocates' : 'Bapuliida Abakakasiddwa'}</h2>
+                  <p className="text-slate-500">{language === 'en' ? 'Consult with registered legal professionals for representation.' : 'Webuuze ku bakugu b\'amateeka abakakasiddwa.'}</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {MOCK_LAWYERS.map(lawyer => (
+                    <div key={lawyer.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
+                          <User size={24} />
+                        </div>
+                        {lawyer.verified && (
+                          <div className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-green-100">
+                            <ShieldCheck size={12} /> Verified
+                          </div>
+                        )}
                       </div>
-                      <p className="font-bold text-slate-800 text-sm sm:text-base leading-snug">{language === 'en' ? q.en : q.lg}</p>
-                    </motion.button>
+                      <h3 className="font-bold text-lg text-slate-900">{lawyer.name}</h3>
+                      <p className="text-sm text-amber-700 font-bold mb-1">{lawyer.firm}</p>
+                      <p className="text-xs text-slate-500 mb-4">{lawyer.specialty}</p>
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                        <div className="flex items-center gap-1 text-slate-600 text-sm">
+                          <Map size={14} /> {lawyer.location}
+                        </div>
+                        <button className="text-amber-700 font-bold text-sm hover:underline flex items-center gap-1">
+                          Contact <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-            ) : (
-              <div className="space-y-6">
-                {messages.map((m) => (
-                  <motion.div 
-                    key={m.id} 
-                    initial={{ opacity: 0, y: 10 }} 
-                    animate={{ opacity: 1, y: 0 }} 
-                    className={cn("flex gap-2 sm:gap-4", m.role === 'user' ? "flex-row-reverse" : "flex-row")}
-                  >
-                    <div className={cn("w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 shadow-sm", m.role === 'user' ? "bg-slate-800 text-white" : "bg-amber-600 text-white")}>
-                      {m.role === 'user' ? <User size={16} className="sm:w-5 sm:h-5" /> : <Bot size={16} className="sm:w-5 sm:h-5" />}
-                    </div>
-                    <div className={cn(
-                      "max-w-[92%] sm:max-w-[85%] rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-sm relative group transition-all", 
-                      m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800 shadow-slate-100"
-                    )}>
-                      {m.role === 'assistant' && (
-                        <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold text-amber-600 uppercase tracking-widest">
-                          <ShieldCheck size={12} />
-                          <span>Verified Legal Source</span>
-                        </div>
-                      )}
-                      <div className="markdown-body prose prose-slate prose-sm max-w-none dark:prose-invert">
-                        <Markdown 
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            table: ({node, ...props}) => (
-                              <div className="table-wrapper">
-                                <table {...props} />
-                              </div>
-                            )
-                          }}
-                        >
-                          {streamingContent[m.id] || m.content}
-                        </Markdown>
-                      </div>
-                      
-                      {m.role === 'assistant' && !streamingContent[m.id] && (
-                        <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-slate-100">
-                          <button 
-                            onClick={() => speakText(m.content, m.id)} 
-                            disabled={isAudioLoading === m.id}
-                            className={cn(
-                              "p-2 rounded-xl transition-all flex items-center justify-center min-w-[40px] min-h-[40px]", 
-                              isSpeaking === m.id ? "bg-amber-100 text-amber-600" : "bg-slate-50 text-slate-400 hover:text-amber-600",
-                              isAudioLoading === m.id && "animate-pulse"
-                            )}
-                          >
-                            {isAudioLoading === m.id ? <Loader2 size={18} className="animate-spin" /> : (isSpeaking === m.id ? <VolumeX size={18} /> : <Volume2 size={18} />)}
-                          </button>
+            ) : null}
+          </div>
 
-                          <button 
-                            onClick={() => setActiveTab('services')}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-[10px] font-bold hover:bg-amber-100 transition-colors min-h-[36px]"
-                          >
-                            <Briefcase size={12} />
-                            {language === 'en' ? 'Legal Help' : 'Obuyambi'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-                {isLoading && !Object.keys(streamingContent).length && (
-                  <div className="flex gap-2 sm:gap-4">
-                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-amber-600 text-white flex items-center justify-center animate-pulse">
-                      <Bot size={16} className="sm:w-5 sm:h-5" />
-                    </div>
-                    <div className="bg-white border border-slate-200 rounded-2xl sm:rounded-3xl rounded-tl-none p-4 sm:p-5 flex gap-1 items-center">
-                      <span className="w-1.5 h-1.5 bg-amber-300 rounded-full animate-bounce" />
-                      <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+          {/* Verification Progress Bar */}
+          <AnimatePresence>
+            {isLoading && verificationSteps.length > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="fixed bottom-32 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4"
+              >
+                <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-4">
+                  <div className="relative w-10 h-10 shrink-0">
+                    <div className="absolute inset-0 border-4 border-white/10 rounded-full" />
+                    <div className="absolute inset-0 border-4 border-amber-500 rounded-full border-t-transparent animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <ShieldAlert size={16} className="text-amber-500" />
                     </div>
                   </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Verification in Progress</p>
+                    <p className="text-sm font-medium truncate text-slate-300">{verificationSteps[verificationSteps.length - 1]}</p>
+                  </div>
+                </div>
+              </motion.div>
             )}
-          </>
-        ) : (
-          <div className="space-y-8 py-4">
-            <div className="space-y-2">
-              <h2 className="text-3xl font-bold text-slate-900">
-                {language === 'en' ? 'Professional Services' : 'Emirimu gy\'abakugu'}
-              </h2>
-              <p className="text-slate-600">
-                {language === 'en' ? 'Connect with verified land legal experts across Uganda.' : 'Kwatagana n\'abakugu b\'ettaka abakakasiddwa mu Uganda yonna.'}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              {MOCK_LAWYERS.map((lawyer) => (
-                <div key={lawyer.id} className="bg-white border border-slate-200 rounded-3xl p-6 flex flex-col md:flex-row gap-6 items-start md:items-center hover:shadow-xl hover:shadow-amber-50 transition-all">
-                  <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 shrink-0">
-                    <User size={32} />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-lg text-slate-900">{lawyer.name}</h3>
-                      {lawyer.verified && <CheckCircle2 size={16} className="text-amber-600" />}
-                    </div>
-                    <p className="text-sm text-amber-700 font-semibold">{lawyer.firm}</p>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                      <span className="flex items-center gap-1"><Gavel size={12} /> {lawyer.specialty}</span>
-                      <span className="flex items-center gap-1"><Map size={12} /> {lawyer.location}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2 w-full md:w-auto">
-                    <button 
-                      onClick={() => alert(language === 'en' ? 'Redirecting to secure consultation portal...' : 'Tukutwala ku mulyo ogw\'okuteesa...')}
-                      className="px-6 py-2.5 bg-amber-600 text-white rounded-2xl font-bold text-sm hover:bg-amber-700 transition-all shadow-lg shadow-amber-100"
-                    >
-                      {language === 'en' ? 'Book Consultation' : 'Teesa naye'}
-                    </button>
-                    <p className="text-[10px] text-center text-slate-400 font-medium">Fee: UGX 50,000 / Session</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white relative overflow-hidden">
-              <div className="relative z-10 space-y-6">
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-amber-600 rounded-full text-xs font-bold uppercase tracking-widest">
-                  Oracle Feature
-                </div>
-                <h3 className="text-3xl font-bold leading-tight">
-                  {language === 'en' ? 'Official Legal Summary Report' : 'Lipoota y\'amateeka ey\'ekikugu'}
-                </h3>
-                <p className="text-slate-400 max-w-lg leading-relaxed">
-                  {language === 'en' 
-                    ? 'Generate a certified summary of your rights based on your specific situation. Perfect for presentation to Local Councils, Police, or Mediators.' 
-                    : 'Funa lipoota ekakasiddwa ku ddembe lyo okusinziira ku mbeera yo. Ennungi nnyo okutwala mu LC, Poliisi, oba eri abatuula mu nkayana.'}
-                </p>
-                <button 
-                  onClick={() => setActiveTab('chat')}
-                  className="flex items-center gap-3 px-8 py-4 bg-white text-slate-900 rounded-2xl font-bold hover:bg-slate-100 transition-all"
-                >
-                  <FileText size={20} />
-                  {language === 'en' ? 'Generate Free Report' : 'Funa Lipoota ey\'obwereere'}
-                </button>
-              </div>
-              <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-amber-600/20 rounded-full blur-3xl" />
-            </div>
-          </div>
-        )}
-
-        <footer className="mt-20 pb-12 border-t border-slate-100 text-center">
-          <div className="pt-8 space-y-2">
-            <p className="text-xs text-slate-400 font-medium uppercase tracking-widest">
-              {language === 'en' ? 'Designed & Developed by' : 'Kyakoleddwa era nekiyiiyizibwa'}
-            </p>
-            <p className="text-xl font-bold text-slate-800 tracking-tight">Jonathan Musiime</p>
-          </div>
-          <div className="flex justify-center gap-2 mt-6">
-            <div className="w-1 h-1 rounded-full bg-amber-300" />
-            <div className="w-1 h-1 rounded-full bg-amber-400" />
-            <div className="w-1 h-1 rounded-full bg-amber-500" />
-          </div>
-        </footer>
-      </main>
+          </AnimatePresence>
+        </div>
 
       {/* Input Area */}
       {activeTab === 'chat' && (
-        <div className="fixed bottom-0 left-0 right-0 p-2 sm:p-4 bg-gradient-to-t from-[#FDFCF8] via-[#FDFCF8] to-transparent z-50">
-          <div className="max-w-4xl mx-auto relative">
-            <div className="bg-white rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl shadow-slate-200 border border-slate-200 p-1.5 sm:p-2 overflow-hidden">
-              <AnimatePresence mode="wait">
-                {isRecording || audioPreview ? (
-                  <motion.div 
-                    key="recording"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-1 sm:py-2 w-full"
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3 flex-1">
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                      <span className="text-xs sm:text-sm font-mono font-bold text-slate-600">
-                        {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                      </span>
-                      
-                      <div className="flex items-center h-6 sm:h-8 flex-1 px-2 sm:px-4">
-                        {[...Array(8)].map((_, i) => (
-                          <div key={i} className="waveform-bar" style={{ animationDelay: `${i * 0.1}s` }} />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      <button 
-                        onClick={cancelRecording}
-                        className="p-2 sm:p-3 text-slate-400 hover:text-red-500 transition-colors"
-                        title="Cancel"
-                      >
-                        <X size={18} className="sm:w-5 sm:h-5" />
-                      </button>
-                      
-                      {audioPreview ? (
-                        <button 
-                          onClick={sendRecordedAudio}
-                          className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-600 text-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-amber-200 hover:bg-amber-700 transition-all"
-                        >
-                          <Send size={18} className="sm:w-5 sm:h-5" />
-                        </button>
-                      ) : (
-                        <button 
-                          onClick={stopRecording}
-                          className="w-10 h-10 sm:w-12 sm:h-12 bg-red-500 text-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-red-200 hover:bg-red-600 transition-all"
-                        >
-                          <Square size={18} className="sm:w-5 sm:h-5" />
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    key="input"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="flex items-center gap-1 sm:gap-2 w-full"
-                  >
-                    <button 
-                      onMouseDown={() => {
-                        setIsHoldingToRecord(true);
-                        startRecording();
-                      }}
-                      onMouseUp={() => {
-                        setIsHoldingToRecord(false);
-                        stopRecording();
-                      }}
-                      onTouchStart={(e) => {
-                        e.preventDefault();
-                        setIsHoldingToRecord(true);
-                        startRecording();
-                      }}
-                      onTouchEnd={(e) => {
-                        e.preventDefault();
-                        setIsHoldingToRecord(false);
-                        stopRecording();
-                      }}
-                      className={cn(
-                        "w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all relative",
-                        isHoldingToRecord ? "bg-amber-100 text-amber-600 scale-110" : "bg-slate-50 text-slate-500 hover:bg-slate-100"
-                      )}
-                      title="Hold to record"
-                    >
-                      <Mic size={18} className="sm:w-5 sm:h-5" />
-                    </button>
-                    
-                    <input 
-                      type="text" 
-                      value={input} 
-                      onChange={(e) => setInput(e.target.value)} 
-                      onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
-                      placeholder={language === 'en' ? "Ask about the laws..." : "Buuza ku mateeka..."} 
-                      className="flex-1 bg-transparent border-none focus:ring-0 px-2 sm:px-4 py-2 sm:py-3 text-slate-800 text-sm sm:text-base" 
-                    />
-                    
-                    <button 
-                      onClick={() => handleSend()} 
-                      disabled={!input.trim() || isLoading} 
-                      className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-200 text-white rounded-xl sm:rounded-2xl flex items-center justify-center transition-all shadow-lg shadow-amber-200"
-                    >
-                      <Send size={18} className="sm:w-5 sm:h-5" />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-            
-            <div className="flex items-center justify-between gap-4 mt-2 px-2">
-              <div className="flex items-center gap-2 px-2 py-0.5 bg-white/50 backdrop-blur-sm rounded-full border border-slate-200/50">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Speed</span>
-                <input 
-                  type="range" 
-                  min="10" 
-                  max="100" 
-                  step="10"
-                  value={streamingSpeed}
-                  onChange={(e) => setStreamingSpeed(parseInt(e.target.value))}
-                  className="w-12 sm:w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+        <footer className="p-4 sm:p-6 bg-white border-t border-slate-200 shrink-0 z-30">
+          <div className="max-w-4xl mx-auto">
+            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-end gap-2 sm:gap-4">
+              <div className="flex-1 relative bg-slate-50 rounded-2xl border border-slate-200 focus-within:border-amber-500 focus-within:ring-4 focus-within:ring-amber-500/10 transition-all">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder={language === 'en' ? "Enter legal inquiry or cite an Act..." : "Wandiika ekibuuzo kyo oba cite amateeka..."}
+                  className="w-full bg-transparent border-none focus:ring-0 p-4 sm:p-5 text-sm sm:text-base resize-none min-h-[56px] max-h-40 custom-scrollbar"
+                  rows={1}
                 />
+                <div className="flex items-center justify-between px-4 pb-3">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => setIsDocumentMode(!isDocumentMode)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                        isDocumentMode ? "bg-amber-600 text-white shadow-lg shadow-amber-900/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+                      )}
+                    >
+                      <FileText size={12} />
+                      {language === 'en' ? 'Document Mode' : 'Ekiwandiiko'}
+                    </button>
+                    <div className="h-4 w-px bg-slate-200 mx-1" />
+                    <button 
+                      type="button"
+                      onMouseDown={startRecording}
+                      onMouseUp={stopRecording}
+                      onTouchStart={startRecording}
+                      onTouchEnd={stopRecording}
+                      className={cn(
+                        "p-2 rounded-lg transition-all",
+                        isRecording ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:bg-slate-200"
+                      )}
+                    >
+                      <Mic size={18} />
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || isLoading}
+                    className="p-2.5 bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-amber-900/20 active:scale-95"
+                  >
+                    {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setIsStreamingMode(!isStreamingMode)}
-                  className={cn("text-[9px] font-bold uppercase tracking-widest transition-colors", isStreamingMode ? "text-blue-600" : "text-slate-400")}
-                >
-                  {isStreamingMode ? 'Streaming' : 'Instant'}
-                </button>
-                <button 
-                  onClick={() => setIsDocumentMode(!isDocumentMode)}
-                  className={cn("text-[9px] font-bold uppercase tracking-widest transition-colors", isDocumentMode ? "text-purple-600" : "text-slate-400")}
-                >
-                  {isDocumentMode ? 'Doc Mode' : 'Chat'}
-                </button>
-              </div>
-            </div>
+            </form>
+            <p className="text-[10px] text-center text-slate-400 mt-4 font-medium">
+              {language === 'en' 
+                ? 'Statutory accuracy is verified against the Constitution and Laws of Uganda.' 
+                : 'Obutuufu bw\'amateeka bukakasibwa okusinziira ku nsonga z\'eggwanga n\'amateeka.'}
+            </p>
           </div>
-        </div>
+        </footer>
       )}
+    </main>
+
       {/* Auth Modal */}
       <AnimatePresence>
         {showAuthModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowAuthModal(false)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200"
             >
-              <div className="p-8 text-center">
-                <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                  <ShieldCheck size={32} />
-                </div>
-                
-                {isEmailVerifying ? (
-                  <div className="text-center">
-                    <h2 className="text-2xl font-bold mb-2">
-                      {language === 'en' ? 'Verify your email' : 'Kakasa Email yo'}
-                    </h2>
-                    <p className="text-slate-500 mb-6">
-                      {language === 'en' 
-                        ? `We've sent a verification link to ${auth.currentUser?.email}. Please check your inbox and click the link to continue.` 
-                        : `Tusindidde akalango k'okukakasa ku ${auth.currentUser?.email}. Genda mu email yo okakase.`}
-                    </p>
-                    
-                    <div className="space-y-4">
-                      <button 
-                        onClick={checkVerification}
-                        className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg hover:bg-amber-700 transition-all shadow-lg flex items-center justify-center gap-3"
-                      >
-                        {language === 'en' ? "I've verified my email" : "Nkakakasizza email yange"}
-                      </button>
-                      
-                      <button 
-                        onClick={async () => {
-                          try {
-                            await sendVerification();
-                            alert(language === 'en' ? 'Verification email resent!' : 'Email ey’okukakasa eddiddemu okusindikibwa!');
-                          } catch (e) {
-                            console.error(e);
-                          }
-                        }}
-                        className="text-amber-600 hover:text-amber-700 font-bold text-sm"
-                      >
-                        {language === 'en' ? "Resend verification link" : "Ddamu osindike akalango"}
-                      </button>
-                      
-                      <button 
-                        onClick={() => {
-                          logout();
-                          setIsEmailVerifying(false);
-                          setShowAuthModal(false);
-                        }}
-                        className="block w-full text-slate-400 hover:text-slate-600 font-medium text-sm mt-4"
-                      >
-                        {language === 'en' ? 'Sign out' : 'Fuluma'}
-                      </button>
+              <div className="p-8">
+                <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white">
+                      <Scale size={22} />
                     </div>
+                    <h2 className="text-2xl font-black text-slate-900">{authMode === 'signin' ? 'Welcome Back' : 'Create Account'}</h2>
                   </div>
-                ) : (
-                  <>
-                    <h2 className="text-2xl font-bold mb-2">
-                      {authMode === 'signin' 
-                        ? (language === 'en' ? 'Sign in to continue' : 'Yingira okusobola okweyongerayo')
-                        : (language === 'en' ? 'Create an account' : 'Kola akawunti empya')}
-                    </h2>
-                    <p className="text-slate-500 mb-6">
-                      {language === 'en' 
-                        ? 'You have used your 2 free questions. Sign in to get unlimited access to the Oracle.' 
-                        : 'Okozesezza ebibuuzo byo 2 eby’obwereere. Yingira okusobola okukozesa Oracle mu ngeri etaliiko kkomo.'}
-                    </p>
+                  <button onClick={() => setShowAuthModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                </div>
 
-                    {authError && (
-                      <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm flex items-start gap-3 text-left">
-                        <Info size={18} className="shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-bold mb-1">{language === 'en' ? 'Auth Failed' : 'Okuyingira kugaanyi'}</p>
-                          <p className="opacity-90">{authError}</p>
-                        </div>
-                      </div>
-                    )}
+                <div className="space-y-4">
+                  <button 
+                    onClick={signInWithGoogle}
+                    className="w-full py-3 px-4 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all shadow-sm"
+                  >
+                    <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="" />
+                    Continue with Google
+                  </button>
+                  <div className="relative py-4">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
+                    <div className="relative flex justify-center text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white px-2">Or use email</div>
+                  </div>
+                  <input 
+                    type="email" 
+                    placeholder="Email Address" 
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                  />
+                  <input 
+                    type="password" 
+                    placeholder="Password" 
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                  />
+                  <button className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg">
+                    {authMode === 'signin' ? 'Sign In' : 'Create Account'}
+                  </button>
+                </div>
 
-                    <div className="space-y-4 mb-6">
-                      <div className="text-left">
-                        <label className="block text-sm font-medium text-slate-700 mb-1 ml-1">
-                          {language === 'en' ? 'Email Address' : 'Email'}
-                        </label>
-                        <input 
-                          type="email"
-                          value={authEmail}
-                          onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder="name@example.com"
-                          className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
-                        />
-                      </div>
-                      <div className="text-left">
-                        <label className="block text-sm font-medium text-slate-700 mb-1 ml-1">
-                          {language === 'en' ? 'Password' : 'Ebisumuluzo'}
-                        </label>
-                        <input 
-                          type="password"
-                          value={authPassword}
-                          onChange={(e) => setAuthPassword(e.target.value)}
-                          placeholder="••••••••"
-                          className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
-                        />
-                      </div>
-                      
-                      <button 
-                        disabled={isSigningIn || !authEmail || !authPassword}
-                        onClick={async () => {
-                          setAuthError(null);
-                          setIsSigningIn(true);
-                          try {
-                            if (authMode === 'signin') {
-                              await signInWithEmail(authEmail, authPassword);
-                            } else {
-                              await signUpWithEmail(authEmail, authPassword);
-                              await sendVerification();
-                              setVerificationSent(true);
-                            }
-                            // Don't close modal if we need verification
-                            if (authMode === 'signin' || !auth.currentUser?.emailVerified) {
-                              // If it's a signin, it might still need verification
-                              if (auth.currentUser && !auth.currentUser.emailVerified) {
-                                setIsEmailVerifying(true);
-                              } else {
-                                setShowAuthModal(false);
-                              }
-                            }
-                          } catch (error: any) {
-                            console.error("Auth error:", error);
-                            let msg = error.message;
-                            if (msg.includes("auth/user-not-found") || msg.includes("auth/wrong-password") || msg.includes("auth/invalid-credential")) {
-                              msg = language === 'en' ? "Invalid email or password." : "Email oba ebisumuluzo tebikola.";
-                            } else if (msg.includes("auth/email-already-in-use")) {
-                              msg = language === 'en' ? "Email already in use." : "Email eno ekozesebwa dda.";
-                            } else if (msg.includes("auth/weak-password")) {
-                              msg = language === 'en' ? "Password is too weak." : "Ebisumuluzo bino binafu nnyo.";
-                            }
-                            setAuthError(msg);
-                          } finally {
-                            setIsSigningIn(false);
-                          }
-                        }}
-                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all shadow-lg flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isSigningIn ? (
-                          <Loader2 size={24} className="animate-spin" />
-                        ) : (
-                          authMode === 'signin' 
-                            ? (language === 'en' ? 'Sign In' : 'Yingira')
-                            : (language === 'en' ? 'Create Account' : 'Kola Akawunti')
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="relative mb-6">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-slate-200"></div>
-                      </div>
-                      <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-white text-slate-400">
-                          {language === 'en' ? 'Or continue with' : 'Oba kozesa'}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <button 
-                      disabled={isSigningIn}
-                      onClick={async () => {
-                        setAuthError(null);
-                        setIsSigningIn(true);
-                        try {
-                          await signInWithGoogle();
-                          setShowAuthModal(false);
-                        } catch (error: any) {
-                          console.error("Sign in error:", error);
-                          let msg = error.message;
-                          if (msg.includes("auth/unauthorized-domain")) {
-                            msg = language === 'en' 
-                              ? `This domain (${window.location.hostname}) is not authorized in Firebase. Please add it to 'Authorized domains' in your Firebase console. If you've already added it, please wait 5 minutes for it to propagate.`
-                              : `Omukutu guno (${window.location.hostname}) tegukkiriziddwa mu Firebase. Gulyongereko mu 'Authorized domains' mu Firebase console yo. Bwoba ogulyongeddeko dda, linda eddakiika 5 bisobole okutandika okukola.`;
-                          } else if (msg.includes("auth/popup-blocked")) {
-                            msg = language === 'en'
-                              ? "The sign-in popup was blocked. Please allow popups for this site or try opening the app in a new tab."
-                              : "Eidirisa ly'okuyingira ligaanyi okugguka. Gulawo 'popups' mu nteekateeka za 'browser' yo oba gezaako okuggulawo app mu 'tab' empya.";
-                          }
-                          setAuthError(msg);
-                        } finally {
-                          setIsSigningIn(false);
-                        }
-                      }}
-                      className="w-full py-4 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold text-lg hover:bg-slate-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSigningIn ? (
-                        <Loader2 size={24} className="animate-spin" />
-                      ) : (
-                        <>
-                          <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
-                          {language === 'en' ? 'Google' : 'Google'}
-                        </>
-                      )}
-                    </button>
-
-                    <div className="mt-6 flex flex-col items-center gap-2">
-                      <button 
-                        onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
-                        className="text-amber-600 hover:text-amber-700 font-bold text-sm"
-                      >
-                        {authMode === 'signin' 
-                          ? (language === 'en' ? "Don't have an account? Sign Up" : "Tolina akawunti? Kola empya")
-                          : (language === 'en' ? "Already have an account? Sign In" : "Olina akawunti? Yingira")}
-                      </button>
-                      
-                      <button 
-                        onClick={() => setShowAuthModal(false)}
-                        className="text-slate-400 hover:text-slate-600 font-medium text-sm"
-                      >
-                        {language === 'en' ? 'Maybe later' : 'Edda'}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-              <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
-                <p className="text-xs text-slate-400">
-                  {language === 'en' 
-                    ? 'By signing in, you agree to our Terms of Service and Privacy Policy.' 
-                    : 'Bw’oyingira, oba okkirizza amateeka gaffe n’enkola y’obukuumi.'}
-                </p>
+                <div className="mt-6 text-center">
+                  <button 
+                    onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                    className="text-sm font-bold text-amber-600 hover:text-amber-700"
+                  >
+                    {authMode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
