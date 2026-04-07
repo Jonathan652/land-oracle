@@ -191,29 +191,11 @@ export default function App() {
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [streamingContent, setStreamingContent] = useState<Record<string, string>>({});
 
-  const generatePDF = (content: string, type: string = 'Report', style: string = 'Formal') => {
+  const generatePDF = (content: string, title: string) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 20;
     const maxWidth = pageWidth - (margin * 2);
-
-    // Header
-    doc.setFillColor(180, 83, 9); // Amber 700
-    doc.rect(0, 0, pageWidth, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Uganda Law Oracle', margin, 20);
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Oracle Legal Guidance Report', margin, 30);
-
-    // Date
-    doc.setTextColor(100, 116, 139); // Slate 500
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 50, 50);
 
     // Content
     doc.setTextColor(30, 41, 59); // Slate 800
@@ -227,10 +209,10 @@ export default function App() {
 
     const splitText = doc.splitTextToSize(cleanContent, maxWidth);
     const pageHeight = doc.internal.pageSize.getHeight();
-    let cursorY = 65;
+    let cursorY = 20;
 
     for (let i = 0; i < splitText.length; i++) {
-      if (cursorY > pageHeight - 40) {
+      if (cursorY > pageHeight - 30) {
         doc.addPage();
         cursorY = 20;
       }
@@ -240,37 +222,31 @@ export default function App() {
 
     // Footer Disclaimer
     doc.setDrawColor(226, 232, 240); // Slate 200
-    doc.line(margin, pageHeight - 30, pageWidth - margin, pageHeight - 30);
+    doc.line(margin, pageHeight - 25, pageWidth - margin, pageHeight - 25);
     
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
     const disclaimer = "For guidance only—not legal advice. Consult a lawyer for specific cases.";
     const splitDisclaimer = doc.splitTextToSize(disclaimer, maxWidth);
-    doc.text(splitDisclaimer, margin, pageHeight - 20);
+    doc.text(splitDisclaimer, margin, pageHeight - 15);
 
-    doc.save(`Uganda_Law_Oracle_${type}_${new Date().getTime()}.pdf`);
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    
+    // Trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title.replace(/\s+/g, '_')}.pdf`;
+    link.click();
+    
+    return url;
   };
 
-  const generateDOCX = async (content: string, type: string = 'Report', style: string = 'Formal') => {
+  const generateDOCX = async (content: string, title: string) => {
     const doc = new Document({
       sections: [{
         properties: {},
         children: [
-          new Paragraph({
-            text: "Uganda Law Oracle",
-            heading: HeadingLevel.HEADING_1,
-            alignment: AlignmentType.CENTER,
-          }),
-          new Paragraph({
-            text: `${type} - ${style} Style`,
-            heading: HeadingLevel.HEADING_2,
-            alignment: AlignmentType.CENTER,
-          }),
-          new Paragraph({
-            text: `Generated on: ${new Date().toLocaleDateString()}`,
-            alignment: AlignmentType.RIGHT,
-          }),
-          new Paragraph({ text: "" }),
           ...content.split('\n').map(line => new Paragraph({
             children: [new TextRun(line.replace(/[#*`]/g, ''))],
             spacing: { before: 200 },
@@ -290,7 +266,9 @@ export default function App() {
     });
 
     const blob = await Packer.toBlob(doc);
-    saveAs(blob, `Uganda_Law_Oracle_${type}_${new Date().getTime()}.docx`);
+    const url = URL.createObjectURL(blob);
+    saveAs(blob, `${title.replace(/\s+/g, '_')}.docx`);
+    return url;
   };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -923,15 +901,11 @@ export default function App() {
             for (const call of chunk.functionCalls) {
               if (call.name === "generateLegalDocument") {
                 const { content, format, title } = call.args as any;
-                if (format === 'pdf') {
-                  generatePDF(content, title);
-                } else {
-                  generateDOCX(content, title);
-                }
+                const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
                 
                 const successMsg = language === 'en' 
-                  ? `✅ I have generated your ${format.toUpperCase()} document: "${title}". It should be downloading now.`
-                  : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: "${title}". Kirina okuba nga kitandise okwetikka.`;
+                  ? `✅ I have generated your ${format.toUpperCase()} document: **${title}**.\n\n[Click here to download/view ${format.toUpperCase()}](${url})`
+                  : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: **${title}**.\n\n[Wano okutwala/okulaba ${format.toUpperCase()}](${url})`;
                 
                 fullText += successMsg;
                 setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
@@ -980,15 +954,11 @@ export default function App() {
           for (const call of response.functionCalls) {
             if (call.name === "generateLegalDocument") {
               const { content, format, title } = call.args as any;
-              if (format === 'pdf') {
-                generatePDF(content, title);
-              } else {
-                generateDOCX(content, title);
-              }
+              const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
               
               const successMsg = language === 'en' 
-                ? `✅ I have generated your ${format.toUpperCase()} document: "${title}". It should be downloading now.`
-                : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: "${title}". Kirina okuba nga kitandise okwetikka.`;
+                ? `✅ I have generated your ${format.toUpperCase()} document: **${title}**.\n\n[Click here to download/view ${format.toUpperCase()}](${url})`
+                : `✅ Nkoze ekiwandiiko kyo ekya ${format.toUpperCase()}: **${title}**.\n\n[Wano okutwala/okulaba ${format.toUpperCase()}](${url})`;
               
               fullText = successMsg;
             }
