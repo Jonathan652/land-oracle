@@ -16,7 +16,7 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-100"
+            className="bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-100"
           >
             <div className="bg-[#0B0F1A] p-6 sm:p-8 text-white flex items-center gap-4 sm:gap-6">
               <div className="p-3 sm:p-4 bg-[#C5A059] rounded-xl sm:rounded-2xl text-[#0B0F1A] shadow-xl shadow-[#C5A059]/10 shrink-0">
@@ -28,7 +28,7 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
               </div>
             </div>
 
-            <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
               <div className="flex gap-4 sm:gap-5 items-start p-4 sm:p-6 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100">
                 <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-[#C5A059] shrink-0 mt-1" />
                 <div className="text-xs sm:text-sm text-slate-700 leading-relaxed">

@@ -120,6 +120,19 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<'chat' | 'lawyers' | 'documents' | 'services'>('chat');
 
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleAcceptLegalNotice = () => {
     localStorage.setItem('uganda_law_portal_legal_notice_accepted', 'true');
     setShowLegalNotice(false);
@@ -872,7 +885,7 @@ export default function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans selection:bg-[#C5A059]/20">
+    <div className="flex h-[100dvh] bg-[#F8FAFC] overflow-hidden font-sans selection:bg-[#C5A059]/20">
       <LegalNoticeModal isOpen={showLegalNotice} onAccept={handleAcceptLegalNotice} />
       
       {/* Sidebar Overlay */}
@@ -991,7 +1004,7 @@ export default function App() {
       <main className="flex-1 flex flex-col relative overflow-hidden">
         {/* Header */}
         <header className="h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 shrink-0 z-30 shadow-sm">
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors">
               <Menu size={18} className="sm:w-5 sm:h-5" />
             </button>
@@ -1145,12 +1158,12 @@ export default function App() {
             ) : activeTab === 'lawyers' ? (
               <div className="py-12 space-y-12">
                 <div className="text-center space-y-4">
-                  <h2 className="text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">{language === 'en' ? 'Verified Legal Advocates' : 'Bapuliida Abakakasiddwa'}</h2>
-                  <p className="text-slate-500 text-lg max-w-xl mx-auto">{language === 'en' ? 'Consult with registered legal professionals for representation and specialized guidance.' : 'Webuuze ku bakugu b\'amateeka abakakasiddwa.'}</p>
+                  <h2 className="text-2xl sm:text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">{language === 'en' ? 'Verified Legal Advocates' : 'Bapuliida Abakakasiddwa'}</h2>
+                  <p className="text-slate-500 text-sm sm:text-lg max-w-xl mx-auto">{language === 'en' ? 'Consult with registered legal professionals for representation and specialized guidance.' : 'Webuuze ku bakugu b\'amateeka abakakasiddwa.'}</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {MOCK_LAWYERS.map(lawyer => (
-                    <div key={lawyer.id} className="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm hover:shadow-2xl hover:shadow-[#C5A059]/5 transition-all group">
+                    <div key={lawyer.id} className="bg-white border border-slate-100 rounded-2xl sm:rounded-[2rem] p-6 sm:p-8 shadow-sm hover:shadow-2xl hover:shadow-[#C5A059]/5 transition-all group">
                       <div className="flex justify-between items-start mb-6">
                         <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all">
                           <User size={32} />
@@ -1186,7 +1199,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="fixed bottom-32 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4"
+                className="fixed bottom-24 sm:bottom-32 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4"
               >
                 <div className="bg-[#0B0F1A] text-white p-5 rounded-[2rem] shadow-2xl border border-white/10 flex items-center gap-5">
                   <div className="relative w-12 h-12 shrink-0">
