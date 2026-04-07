@@ -268,16 +268,23 @@ export default function App() {
     if (!isPro && freeQuestionsRemaining <= 0) return;
     setRecordingError(null);
     
+    // 1. Cleanup any existing recorder/stream to avoid "war" with hardware
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.warn("Error stopping previous recorder:", e);
+      }
+    }
+    
     if (!navigator.mediaDevices || !window.MediaRecorder) {
       setRecordingError(language === 'en' ? "Recording not supported in this browser." : "Okukwata eddoboozi tekuwagirwa mu browser eno.");
       return;
     }
 
     try {
-      if (!streamRef.current || !streamRef.current.active) {
-        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-      }
-      const stream = streamRef.current;
+      // 2. Request fresh stream
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
       const mimeTypes = [
         'audio/webm;codecs=opus',
@@ -316,6 +323,9 @@ export default function App() {
       };
 
       mediaRecorder.onstop = async () => {
+        // 3. Release hardware immediately
+        stream.getTracks().forEach(track => track.stop());
+        
         if (audioChunksRef.current.length === 0) {
           console.warn("No audio data captured.");
           setRecordingError(language === 'en' ? "No audio data captured. Please try again." : "Tewali ddoboozi likwatiddwa. Gezaako nate.");
@@ -394,6 +404,19 @@ export default function App() {
       return;
     }
 
+    let mimeType = (audioBlob.type || 'audio/webm').split(';')[0];
+    if (mimeType.includes('mp4') || mimeType.includes('aac') || mimeType.includes('m4a')) {
+      mimeType = 'audio/mp4';
+    } else if (mimeType.includes('webm')) {
+      mimeType = 'audio/webm';
+    } else if (mimeType.includes('ogg')) {
+      mimeType = 'audio/ogg';
+    } else if (mimeType.includes('wav')) {
+      mimeType = 'audio/wav';
+    } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+      mimeType = 'audio/mp3';
+    }
+
     try {
       if (audioBlob.size > 15 * 1024 * 1024) { // 15MB limit
         throw new Error("Audio file is too large. Please record a shorter message.");
@@ -434,42 +457,37 @@ export default function App() {
         throw new Error("No internet connection.");
       }
 
-      // 3. Clean mimeType for Gemini
-      let mimeType = (audioBlob.type || 'audio/webm').split(';')[0];
-      if (mimeType.includes('mp4') || mimeType.includes('aac') || mimeType.includes('m4a')) {
-        mimeType = 'audio/mp4';
-      } else if (mimeType.includes('webm')) {
-        mimeType = 'audio/webm';
-      } else if (mimeType.includes('ogg')) {
-        mimeType = 'audio/ogg';
-      } else if (mimeType.includes('wav')) {
-        mimeType = 'audio/wav';
-      } else if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
-        mimeType = 'audio/mp3';
-      }
-
-      // 4. Transcribe the audio using Gemini with retry logic
+      // 4. Transcribe the audio using Gemini with retry logic and timeout
       let transcriptionResponse;
       let retries = 2;
+      const transcriptionTimeout = 20000; // 20s timeout
+
       while (retries >= 0) {
         try {
-          transcriptionResponse = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+          const transcriptionPromise = ai.models.generateContent({
+            model: "gemini-1.5-flash",
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: "Please transcribe the following audio precisely. The audio is either in Luganda or English. Transcribe in the original language spoken. Do not translate. Return ONLY the transcribed text. If no speech is detected, return '[No speech detected]'." }
+                { text: "Transcribe the following audio precisely. The audio is in Luganda or English. Return the transcription in the original language spoken. If no speech is detected, return '[No speech detected]'." }
               ] 
             },
             config: {
               temperature: 0.1,
             }
           });
+
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Transcription timed out")), transcriptionTimeout)
+          );
+
+          transcriptionResponse = await Promise.race([transcriptionPromise, timeoutPromise]) as any;
           break; // Success
-        } catch (err) {
+        } catch (err: any) {
+          console.warn(`Transcription attempt ${3 - retries} failed:`, err.message);
           if (retries === 0) throw err;
           retries--;
-          await new Promise(r => setTimeout(r, 1000)); // Wait 1s before retry
+          await new Promise(r => setTimeout(r, 1500)); // Wait 1.5s before retry
         }
       }
 
@@ -497,8 +515,52 @@ export default function App() {
         : SYSTEM_INSTRUCTION;
 
       if (isStreamingMode) {
-        const stream = await ai.models.generateContentStream({
-          model: "gemini-3-flash-preview",
+        try {
+          const streamPromise = ai.models.generateContentStream({
+            model: "gemini-1.5-flash",
+            contents: { 
+              parts: [
+                { text: transcribedText }
+              ] 
+            },
+            config: { 
+              systemInstruction: systemPrompt, 
+              temperature: 0.4 
+            },
+          });
+
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Response timed out")), 30000)
+          );
+
+          const stream = await Promise.race([streamPromise, timeoutPromise]) as any;
+
+          let fullText = "";
+          for await (const chunk of stream) {
+            fullText += chunk.text;
+            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+            
+            const container = document.documentElement;
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+            if (isNearBottom) {
+              scrollToBottom();
+            }
+          }
+          
+          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+          setStreamingContent(prev => {
+            const next = { ...prev };
+            delete next[assistantMessageId];
+            return next;
+          });
+          speakText(fullText, assistantMessageId);
+        } catch (err) {
+          console.error("Streaming error:", err);
+          throw err;
+        }
+      } else {
+        const responsePromise = ai.models.generateContent({
+          model: "gemini-1.5-flash",
           contents: { 
             parts: [
               { text: transcribedText }
@@ -510,38 +572,11 @@ export default function App() {
           },
         });
 
-        let fullText = "";
-        for await (const chunk of stream) {
-          fullText += chunk.text;
-          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-          
-          const container = document.documentElement;
-          const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-          if (isNearBottom) {
-            scrollToBottom();
-          }
-        }
-        
-        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-        setStreamingContent(prev => {
-          const next = { ...prev };
-          delete next[assistantMessageId];
-          return next;
-        });
-        speakText(fullText, assistantMessageId);
-      } else {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: { 
-            parts: [
-              { text: transcribedText }
-            ] 
-          },
-          config: { 
-            systemInstruction: systemPrompt, 
-            temperature: 0.4 
-          },
-        });
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Response timed out")), 30000)
+        );
+
+        const response = await Promise.race([responsePromise, timeoutPromise]) as any;
         const fullText = response.text || "I apologize.";
         updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         speakText(fullText, assistantMessageId);
@@ -1430,13 +1465,23 @@ export default function App() {
                     </button>
                   </div>
                 ) : isTranscribing ? (
-                  <div className="w-full flex items-center justify-center p-4 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200">
+                  <div className="w-full flex items-center justify-between p-4 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200">
                     <div className="flex items-center gap-3 text-[#C5A059]">
                       <Loader2 size={24} className="animate-spin" />
                       <span className="font-bold uppercase tracking-widest text-xs">
                         {language === 'en' ? 'Transcribing...' : 'Nkyusa eddoboozi...'}
                       </span>
                     </div>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setIsTranscribing(false);
+                        setIsLoading(false);
+                      }}
+                      className="text-slate-400 hover:text-red-500 transition-colors p-2"
+                    >
+                      <X size={20} />
+                    </button>
                   </div>
                 ) : (
                   <>
