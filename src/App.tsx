@@ -872,25 +872,38 @@ export default function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans selection:bg-amber-100">
+    <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans selection:bg-[#C5A059]/20">
       <LegalNoticeModal isOpen={showLegalNotice} onAccept={handleAcceptLegalNotice} />
       
+      {/* Sidebar Overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <aside className={cn(
-        "bg-slate-900 text-slate-300 w-80 flex-shrink-0 flex flex-col transition-all duration-300 border-r border-slate-800 z-40 fixed inset-y-0 lg:relative",
+        "bg-[#0B0F1A] text-slate-400 w-72 sm:w-80 flex-shrink-0 flex flex-col transition-all duration-300 border-r border-white/5 z-50 fixed inset-y-0 lg:relative shadow-2xl",
         !isSidebarOpen && "-translate-x-full lg:-ml-80"
       )}>
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-900/40">
+            <div className="w-10 h-10 bg-[#C5A059] rounded-xl flex items-center justify-center text-[#0B0F1A] shadow-lg shadow-[#C5A059]/10">
               <Scale size={22} />
             </div>
             <div>
-              <h1 className="font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Portal</h1>
-              <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest">Legal Information System</p>
+              <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Portal</h1>
+              <p className="text-[10px] text-[#C5A059] font-bold uppercase tracking-[0.2em]">Legal Information System</p>
             </div>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-slate-800 rounded-lg">
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-white/5 rounded-lg transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -908,25 +921,25 @@ export default function App() {
               setSessions(prev => [newSession, ...prev]);
               setCurrentSessionId(newSession.id);
             }}
-            className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-amber-900/20 transition-all active:scale-95"
+            className="w-full py-3.5 px-4 bg-[#C5A059] hover:bg-[#B38F48] text-[#0B0F1A] rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#C5A059]/5 transition-all active:scale-[0.98]"
           >
             <MessageSquare size={18} />
             {language === 'en' ? 'New Legal Inquiry' : 'Okubuuza Okupya'}
           </button>
 
           <div className="space-y-1">
-            <p className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Recent Inquiries</p>
+            <p className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-[0.2em]">Recent Inquiries</p>
             {sessions.map(session => (
               <div 
                 key={session.id}
                 onClick={() => setCurrentSessionId(session.id)}
                 className={cn(
                   "group p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-3",
-                  currentSessionId === session.id ? "bg-slate-800 text-white shadow-inner" : "hover:bg-slate-800/50"
+                  currentSessionId === session.id ? "bg-white/10 text-white shadow-inner" : "hover:bg-white/5"
                 )}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className={cn("w-2 h-2 rounded-full shrink-0", currentSessionId === session.id ? "bg-amber-500" : "bg-slate-700")} />
+                  <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", currentSessionId === session.id ? "bg-[#C5A059]" : "bg-slate-700")} />
                   <p className="text-sm font-medium truncate">{session.title}</p>
                 </div>
                 <button 
@@ -937,7 +950,7 @@ export default function App() {
                       if (currentSessionId === session.id) setCurrentSessionId(null);
                     }
                   }}
-                  className="opacity-0 group-hover:opacity-100 p-1.5 hover:text-red-400 transition-all hover:bg-slate-700 rounded-lg"
+                  className="opacity-0 group-hover:opacity-100 p-1.5 hover:text-red-400 transition-all hover:bg-white/10 rounded-lg"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -946,11 +959,11 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+        <div className="p-4 border-t border-white/5 bg-black/20">
           {user ? (
-            <div className="flex items-center justify-between p-3 bg-slate-800 rounded-xl border border-slate-700">
+            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-amber-600 flex items-center justify-center text-white font-bold shrink-0 overflow-hidden">
+                <div className="w-8 h-8 rounded-lg bg-[#C5A059] flex items-center justify-center text-[#0B0F1A] font-bold shrink-0 overflow-hidden">
                   {user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.[0] || user.email?.[0]}
                 </div>
                 <div className="min-w-0">
@@ -965,7 +978,7 @@ export default function App() {
           ) : (
             <button 
               onClick={() => setShowAuthModal(true)}
-              className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 border border-slate-700 transition-all"
+              className="w-full py-3 px-4 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold flex items-center justify-center gap-2 border border-white/5 transition-all"
             >
               <User size={18} />
               {language === 'en' ? 'Sign In for Pro' : 'Yingira'}
@@ -977,18 +990,18 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col relative overflow-hidden">
         {/* Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 shrink-0 z-30 shadow-sm">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500">
-              <Menu size={20} />
+        <header className="h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 shrink-0 z-30 shadow-sm">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors">
+              <Menu size={18} className="sm:w-5 sm:h-5" />
             </button>
-            <div className="h-6 w-px bg-slate-200 hidden sm:block" />
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            <div className="h-6 w-px bg-slate-200 hidden xs:block" />
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-1">
               <button 
                 onClick={() => setActiveTab('chat')}
                 className={cn(
-                  "px-4 py-1.5 rounded-full text-sm font-bold transition-all whitespace-nowrap",
-                  activeTab === 'chat' ? "bg-amber-100 text-amber-800" : "text-slate-500 hover:bg-slate-100"
+                  "px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-sm font-bold transition-all whitespace-nowrap",
+                  activeTab === 'chat' ? "bg-[#C5A059]/10 text-[#8B6E37]" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
                 {language === 'en' ? 'Legal Inquiry' : 'Okubuuza'}
@@ -996,8 +1009,8 @@ export default function App() {
               <button 
                 onClick={() => setActiveTab('lawyers')}
                 className={cn(
-                  "px-4 py-1.5 rounded-full text-sm font-bold transition-all whitespace-nowrap",
-                  activeTab === 'lawyers' ? "bg-amber-100 text-amber-800" : "text-slate-500 hover:bg-slate-100"
+                  "px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-sm font-bold transition-all whitespace-nowrap",
+                  activeTab === 'lawyers' ? "bg-[#C5A059]/10 text-[#8B6E37]" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
                 {language === 'en' ? 'Find Advocate' : 'Noonya Puliida'}
@@ -1005,38 +1018,38 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button 
               onClick={() => setAutoTalkBack(!autoTalkBack)}
               className={cn(
-                "p-2 rounded-lg transition-all",
-                autoTalkBack ? "text-amber-600 bg-amber-50" : "text-slate-400 hover:bg-slate-100"
+                "p-1.5 sm:p-2 rounded-lg transition-all",
+                autoTalkBack ? "text-[#C5A059] bg-[#C5A059]/5" : "text-slate-400 hover:bg-slate-50"
               )}
             >
-              {autoTalkBack ? <Volume2 size={20} /> : <VolumeX size={20} />}
+              {autoTalkBack ? <Volume2 size={18} className="sm:w-5 sm:h-5" /> : <VolumeX size={18} className="sm:w-5 sm:h-5" />}
             </button>
             <button 
               onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-600 transition-all uppercase tracking-wider"
+              className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-[9px] sm:text-[10px] font-bold text-slate-600 transition-all uppercase tracking-[0.1em] border border-slate-200"
             >
-              {language === 'en' ? 'English' : 'Luganda'}
+              {language === 'en' ? 'EN' : 'LG'}
             </button>
           </div>
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto relative scroll-smooth bg-slate-50/50 custom-scrollbar">
-          <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6">
+        <div className="flex-1 overflow-y-auto relative scroll-smooth bg-[#F8FAFC] custom-scrollbar">
+          <div className="max-w-4xl mx-auto px-4 py-8 sm:py-12 sm:px-6">
             <AnimatePresence>
               {voiceError && (
                 <motion.div 
                   initial={{ opacity: 0, y: 50 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 50 }}
-                  className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700"
+                  className="fixed bottom-24 sm:bottom-32 left-1/2 -translate-x-1/2 z-[100] bg-[#0B0F1A] text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-2xl flex items-center gap-2 sm:gap-3 border border-white/10 w-[90%] sm:w-auto"
                 >
-                  <VolumeX size={18} className="text-amber-400" />
-                  <span className="text-sm font-medium">{voiceError}</span>
+                  <VolumeX size={16} className="text-[#C5A059] shrink-0" />
+                  <span className="text-xs sm:text-sm font-medium truncate">{voiceError}</span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1045,41 +1058,41 @@ export default function App() {
             {activeTab === 'chat' ? (
               <>
                 {messages.length === 0 ? (
-                  <div className="py-12 space-y-12">
-                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
-                      <div className="w-20 h-20 bg-amber-100 rounded-3xl flex items-center justify-center text-amber-700 mx-auto mb-6 shadow-inner">
-                        <Scale size={40} />
+                  <div className="py-6 sm:py-12 space-y-10 sm:space-y-16">
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4 sm:space-y-6">
+                      <div className="w-16 h-16 sm:w-24 sm:h-24 bg-white rounded-2xl sm:rounded-[2rem] flex items-center justify-center text-[#C5A059] mx-auto mb-4 sm:mb-8 shadow-xl shadow-[#C5A059]/5 border border-slate-100">
+                        <Scale size={32} className="sm:w-12 sm:h-12" />
                       </div>
-                      <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">
+                      <h2 className="text-3xl sm:text-5xl font-display font-bold text-[#0B0F1A] tracking-tight leading-tight">
                         {language === 'en' ? 'Uganda Law Portal' : 'Amateeka ga Uganda'}
                       </h2>
-                      <p className="text-lg text-slate-600 max-w-xl mx-auto font-medium">
+                      <p className="text-base sm:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed px-4">
                         {language === 'en' 
-                          ? 'Professional statutory guidance, document verification, and legal compliance analysis.' 
-                          : 'Okukulembera mu mateeka, okukakasa ebiwandiiko, n\'okukebera obutuufu bw\'amateeka.'}
+                          ? 'Professional statutory guidance, document verification, and legal compliance analysis for the Ugandan jurisdiction.' 
+                          : 'Okukulembera mu mateeka, okukakasa ebiwandiiko, n\'okukebera obutuufu bw\'amateeka mu Uganda.'}
                       </p>
                     </motion.div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                       {quickQuestions.map((q, i) => (
                         <motion.button 
                           key={i} 
-                          initial={{ opacity: 0, scale: 0.95 }} 
+                          initial={{ opacity: 0, scale: 0.98 }} 
                           animate={{ opacity: 1, scale: 1 }} 
                           transition={{ delay: i * 0.1 }} 
                           onClick={() => handleSend(language === 'en' ? q.en : q.lg)} 
-                          className="p-6 text-left bg-white border border-slate-200 rounded-2xl hover:border-amber-400 hover:shadow-xl hover:shadow-amber-900/5 transition-all group flex items-start gap-4"
+                          className="p-5 sm:p-8 text-left bg-white border border-slate-100 rounded-2xl sm:rounded-[2rem] hover:border-[#C5A059]/30 hover:shadow-2xl hover:shadow-[#C5A059]/10 transition-all group flex items-start gap-4 sm:gap-6"
                         >
-                          <div className="p-3 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-amber-600 group-hover:text-white transition-all shrink-0">
-                            {i === 0 && <FileSearch size={20} />}
-                            {i === 1 && <ShieldCheck size={20} />}
-                            {i === 2 && <Gavel size={20} />}
-                            {i === 3 && <FileText size={20} />}
+                          <div className="p-3 sm:p-4 bg-slate-50 rounded-xl sm:rounded-2xl text-slate-400 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all shrink-0 shadow-sm">
+                            {i === 0 && <FileSearch size={20} className="sm:w-6 sm:h-6" />}
+                            {i === 1 && <ShieldCheck size={20} className="sm:w-6 sm:h-6" />}
+                            {i === 2 && <Gavel size={20} className="sm:w-6 sm:h-6" />}
+                            {i === 3 && <FileText size={20} className="sm:w-6 sm:h-6" />}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-800 leading-snug group-hover:text-amber-900 transition-colors">{language === 'en' ? q.en : q.lg}</p>
-                            <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                              {language === 'en' ? 'Start inquiry' : 'Tandika okubuuza'} <ArrowRight size={10} />
+                            <p className="font-display font-bold text-base sm:text-lg text-[#0B0F1A] leading-snug group-hover:text-[#8B6E37] transition-colors mb-1 sm:mb-2">{language === 'en' ? q.en : q.lg}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                              {language === 'en' ? 'Start inquiry' : 'Tandika okubuuza'} <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
                             </p>
                           </div>
                         </motion.button>
@@ -1087,37 +1100,37 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-8 pb-12">
+                  <div className="space-y-6 sm:space-y-10 pb-12">
                     {messages.map((m) => (
                       <motion.div 
                         key={m.id} 
                         initial={{ opacity: 0, y: 10 }} 
                         animate={{ opacity: 1, y: 0 }} 
-                        className={cn("flex gap-4", m.role === 'user' ? "flex-row-reverse" : "flex-row")}
+                        className={cn("flex gap-3 sm:gap-5", m.role === 'user' ? "flex-row-reverse" : "flex-row")}
                       >
                         <div className={cn(
-                          "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm", 
-                          m.role === 'user' ? "bg-slate-800 text-white" : "bg-amber-600 text-white"
+                          "w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-2xl flex items-center justify-center shrink-0 shadow-lg", 
+                          m.role === 'user' ? "bg-[#0B0F1A] text-white" : "bg-white border border-slate-100 text-[#C5A059]"
                         )}>
-                          {m.role === 'user' ? <User size={20} /> : <Scale size={20} />}
+                          {m.role === 'user' ? <User size={16} className="sm:w-6 sm:h-6" /> : <Scale size={16} className="sm:w-6 sm:h-6" />}
                         </div>
                         <div className={cn(
-                          "max-w-[85%] rounded-2xl p-5 sm:p-6 shadow-sm relative group transition-all", 
-                          m.role === 'user' ? "bg-slate-800 text-white rounded-tr-none" : "bg-white border border-slate-200 rounded-tl-none text-slate-800"
+                          "max-w-[90%] sm:max-w-[85%] rounded-2xl sm:rounded-[2rem] p-4 sm:p-8 shadow-sm relative group transition-all", 
+                          m.role === 'user' ? "bg-[#0B0F1A] text-white rounded-tr-none" : "bg-white border border-slate-100 rounded-tl-none text-slate-800"
                         )}>
                           {m.role === 'assistant' && (
-                            <div className="flex items-center gap-2 mb-3 text-[10px] font-black text-amber-600 uppercase tracking-[0.2em] border-b border-amber-100 pb-2">
-                              <ShieldCheck size={12} />
+                            <div className="flex items-center gap-2 mb-3 sm:mb-4 text-[9px] sm:text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] border-b border-slate-50 pb-2 sm:pb-3">
+                              <ShieldCheck size={12} className="sm:w-3.5 sm:h-3.5" />
                               <span>Verified Statutory Guidance</span>
                             </div>
                           )}
-                          <div className="markdown-body prose prose-slate prose-sm max-w-none">
+                          <div className="markdown-body prose prose-slate prose-sm max-w-none text-sm sm:text-base">
                             <Markdown remarkPlugins={[remarkGfm]}>
                               {streamingContent[m.id] || m.content}
                             </Markdown>
                           </div>
                           <div className={cn(
-                            "text-[10px] mt-4 font-medium opacity-40",
+                            "text-[9px] sm:text-[10px] mt-4 sm:mt-6 font-bold uppercase tracking-widest opacity-30",
                             m.role === 'user' ? "text-right" : "text-left"
                           )}>
                             {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1130,33 +1143,33 @@ export default function App() {
                 )}
               </>
             ) : activeTab === 'lawyers' ? (
-              <div className="py-8 space-y-8">
-                <div className="text-center space-y-2">
-                  <h2 className="text-3xl font-bold text-slate-900">{language === 'en' ? 'Verified Legal Advocates' : 'Bapuliida Abakakasiddwa'}</h2>
-                  <p className="text-slate-500">{language === 'en' ? 'Consult with registered legal professionals for representation.' : 'Webuuze ku bakugu b\'amateeka abakakasiddwa.'}</p>
+              <div className="py-12 space-y-12">
+                <div className="text-center space-y-4">
+                  <h2 className="text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">{language === 'en' ? 'Verified Legal Advocates' : 'Bapuliida Abakakasiddwa'}</h2>
+                  <p className="text-slate-500 text-lg max-w-xl mx-auto">{language === 'en' ? 'Consult with registered legal professionals for representation and specialized guidance.' : 'Webuuze ku bakugu b\'amateeka abakakasiddwa.'}</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {MOCK_LAWYERS.map(lawyer => (
-                    <div key={lawyer.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
-                          <User size={24} />
+                    <div key={lawyer.id} className="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm hover:shadow-2xl hover:shadow-[#C5A059]/5 transition-all group">
+                      <div className="flex justify-between items-start mb-6">
+                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all">
+                          <User size={32} />
                         </div>
                         {lawyer.verified && (
-                          <div className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-green-100">
-                            <ShieldCheck size={12} /> Verified
+                          <div className="flex items-center gap-1.5 bg-[#C5A059]/10 text-[#8B6E37] px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[#C5A059]/20">
+                            <ShieldCheck size={14} /> Verified
                           </div>
                         )}
                       </div>
-                      <h3 className="font-bold text-lg text-slate-900">{lawyer.name}</h3>
-                      <p className="text-sm text-amber-700 font-bold mb-1">{lawyer.firm}</p>
-                      <p className="text-xs text-slate-500 mb-4">{lawyer.specialty}</p>
-                      <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                        <div className="flex items-center gap-1 text-slate-600 text-sm">
-                          <Map size={14} /> {lawyer.location}
+                      <h3 className="font-display font-bold text-xl text-[#0B0F1A] mb-1">{lawyer.name}</h3>
+                      <p className="text-sm text-[#C5A059] font-bold mb-2 uppercase tracking-wide">{lawyer.firm}</p>
+                      <p className="text-sm text-slate-500 mb-6 leading-relaxed">{lawyer.specialty}</p>
+                      <div className="flex items-center justify-between pt-6 border-t border-slate-50">
+                        <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest">
+                          <Map size={14} className="text-[#C5A059]" /> {lawyer.location}
                         </div>
-                        <button className="text-amber-700 font-bold text-sm hover:underline flex items-center gap-1">
-                          Contact <ArrowRight size={14} />
+                        <button className="text-[#0B0F1A] font-bold text-sm hover:text-[#C5A059] transition-colors flex items-center gap-2 group/btn">
+                          Contact <ArrowRight size={16} className="group-hover/btn:translate-x-1 transition-transform" />
                         </button>
                       </div>
                     </div>
@@ -1175,16 +1188,16 @@ export default function App() {
                 exit={{ opacity: 0, y: 20 }}
                 className="fixed bottom-32 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4"
               >
-                <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-4">
-                  <div className="relative w-10 h-10 shrink-0">
-                    <div className="absolute inset-0 border-4 border-white/10 rounded-full" />
-                    <div className="absolute inset-0 border-4 border-amber-500 rounded-full border-t-transparent animate-spin" />
+                <div className="bg-[#0B0F1A] text-white p-5 rounded-[2rem] shadow-2xl border border-white/10 flex items-center gap-5">
+                  <div className="relative w-12 h-12 shrink-0">
+                    <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
+                    <div className="absolute inset-0 border-4 border-[#C5A059] rounded-full border-t-transparent animate-spin" />
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <ShieldAlert size={16} className="text-amber-500" />
+                      <ShieldAlert size={20} className="text-[#C5A059]" />
                     </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Verification in Progress</p>
+                    <p className="text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] mb-1">Verification in Progress</p>
                     <p className="text-sm font-medium truncate text-slate-300">{verificationSteps[verificationSteps.length - 1]}</p>
                   </div>
                 </div>
@@ -1195,10 +1208,10 @@ export default function App() {
 
       {/* Input Area */}
       {activeTab === 'chat' && (
-        <footer className="p-4 sm:p-6 bg-white border-t border-slate-200 shrink-0 z-30">
+        <footer className="p-3 sm:p-8 bg-white border-t border-slate-100 shrink-0 z-30">
           <div className="max-w-4xl mx-auto">
-            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-end gap-2 sm:gap-4">
-              <div className="flex-1 relative bg-slate-50 rounded-2xl border border-slate-200 focus-within:border-amber-500 focus-within:ring-4 focus-within:ring-amber-500/10 transition-all">
+            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-end gap-2 sm:gap-6">
+              <div className="flex-1 relative bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200 focus-within:border-[#C5A059] focus-within:ring-4 sm:focus-within:ring-8 focus-within:ring-[#C5A059]/5 transition-all">
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -1208,24 +1221,25 @@ export default function App() {
                       handleSend();
                     }
                   }}
-                  placeholder={language === 'en' ? "Enter legal inquiry or cite an Act..." : "Wandiika ekibuuzo kyo oba cite amateeka..."}
-                  className="w-full bg-transparent border-none focus:ring-0 p-4 sm:p-5 text-sm sm:text-base resize-none min-h-[56px] max-h-40 custom-scrollbar"
+                  placeholder={language === 'en' ? "Enter legal inquiry..." : "Wandiika ekibuuzo kyo..."}
+                  className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
                   rows={1}
                 />
-                <div className="flex items-center justify-between px-4 pb-3">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between px-3 sm:px-6 pb-2 sm:pb-4">
+                  <div className="flex items-center gap-1.5 sm:gap-3">
                     <button 
                       type="button"
                       onClick={() => setIsDocumentMode(!isDocumentMode)}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
-                        isDocumentMode ? "bg-amber-600 text-white shadow-lg shadow-amber-900/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+                        "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-bold uppercase tracking-widest transition-all",
+                        isDocumentMode ? "bg-[#C5A059] text-[#0B0F1A] shadow-lg shadow-[#C5A059]/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
                       )}
                     >
-                      <FileText size={12} />
-                      {language === 'en' ? 'Document Mode' : 'Ekiwandiiko'}
+                      <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden xs:inline">{language === 'en' ? 'Document' : 'Ekiwandiiko'}</span>
+                      <span className="xs:hidden">DOC</span>
                     </button>
-                    <div className="h-4 w-px bg-slate-200 mx-1" />
+                    <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
                     <button 
                       type="button"
                       onMouseDown={startRecording}
@@ -1233,24 +1247,24 @@ export default function App() {
                       onTouchStart={startRecording}
                       onTouchEnd={stopRecording}
                       className={cn(
-                        "p-2 rounded-lg transition-all",
-                        isRecording ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:bg-slate-200"
+                        "p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-all",
+                        isRecording ? "bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/20" : "text-slate-400 hover:bg-slate-200"
                       )}
                     >
-                      <Mic size={18} />
+                      <Mic size={16} className="sm:w-5 sm:h-5" />
                     </button>
                   </div>
                   <button
                     type="submit"
                     disabled={!input.trim() || isLoading}
-                    className="p-2.5 bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-amber-900/20 active:scale-95"
+                    className="p-2 sm:p-3.5 bg-[#0B0F1A] text-[#C5A059] rounded-lg sm:rounded-2xl hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-black/10 active:scale-95"
                   >
-                    {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+                    {isLoading ? <Loader2 size={18} className="animate-spin sm:w-6 sm:h-6" /> : <Send size={18} className="sm:w-6 sm:h-6" />}
                   </button>
                 </div>
               </div>
             </form>
-            <p className="text-[10px] text-center text-slate-400 mt-4 font-medium">
+            <p className="text-[8px] sm:text-[10px] text-center text-slate-400 mt-3 sm:mt-6 font-bold uppercase tracking-[0.1em] px-4">
               {language === 'en' 
                 ? 'Statutory accuracy is verified against the Constitution and Laws of Uganda.' 
                 : 'Obutuufu bw\'amateeka bukakasibwa okusinziira ku nsonga z\'eggwanga n\'amateeka.'}
@@ -1263,55 +1277,55 @@ export default function App() {
       {/* Auth Modal */}
       <AnimatePresence>
         {showAuthModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0B0F1A]/90 backdrop-blur-md">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200"
+              className="bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 max-h-[90vh] overflow-y-auto"
             >
-              <div className="p-8">
-                <div className="flex justify-between items-center mb-8">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white">
-                      <Scale size={22} />
+              <div className="p-6 sm:p-10">
+                <div className="flex justify-between items-center mb-6 sm:mb-10">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#0B0F1A] rounded-xl sm:rounded-2xl flex items-center justify-center text-[#C5A059] shadow-xl">
+                      <Scale size={20} className="sm:w-6 sm:h-6" />
                     </div>
-                    <h2 className="text-2xl font-black text-slate-900">{authMode === 'signin' ? 'Welcome Back' : 'Create Account'}</h2>
+                    <h2 className="text-2xl sm:text-3xl font-display font-bold text-[#0B0F1A] tracking-tight">{authMode === 'signin' ? 'Welcome Back' : 'Create Account'}</h2>
                   </div>
-                  <button onClick={() => setShowAuthModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                  <button onClick={() => setShowAuthModal(false)} className="p-2 hover:bg-slate-50 rounded-full text-slate-400 transition-colors"><X size={20} className="sm:w-6 sm:h-6" /></button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 sm:space-y-5">
                   <button 
                     onClick={signInWithGoogle}
-                    className="w-full py-3 px-4 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all shadow-sm"
+                    className="w-full py-3.5 sm:py-4 px-4 bg-white border border-slate-200 text-slate-700 rounded-xl sm:rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all shadow-sm active:scale-[0.98] text-sm sm:text-base"
                   >
                     <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="" />
                     Continue with Google
                   </button>
-                  <div className="relative py-4">
+                  <div className="relative py-4 sm:py-6">
                     <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-                    <div className="relative flex justify-center text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white px-2">Or use email</div>
+                    <div className="relative flex justify-center text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] bg-white px-4">Or use email</div>
                   </div>
                   <input 
                     type="email" 
                     placeholder="Email Address" 
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                    className="w-full p-4 sm:p-5 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl text-sm focus:ring-4 sm:focus:ring-8 focus:ring-[#C5A059]/5 focus:border-[#C5A059] transition-all outline-none"
                   />
                   <input 
                     type="password" 
                     placeholder="Password" 
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                    className="w-full p-4 sm:p-5 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl text-sm focus:ring-4 sm:focus:ring-8 focus:ring-[#C5A059]/5 focus:border-[#C5A059] transition-all outline-none"
                   />
-                  <button className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg">
+                  <button className="w-full py-4 sm:py-5 bg-[#0B0F1A] text-[#C5A059] rounded-xl sm:rounded-2xl font-bold hover:bg-black transition-all shadow-2xl shadow-black/10 active:scale-[0.98] text-sm sm:text-base">
                     {authMode === 'signin' ? 'Sign In' : 'Create Account'}
                   </button>
                 </div>
 
-                <div className="mt-6 text-center">
+                <div className="mt-6 sm:mt-8 text-center">
                   <button 
                     onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
-                    className="text-sm font-bold text-amber-600 hover:text-amber-700"
+                    className="text-xs sm:text-sm font-bold text-[#C5A059] hover:text-[#8B6E37] transition-colors"
                   >
                     {authMode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
                   </button>
