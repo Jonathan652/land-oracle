@@ -1,8 +1,6 @@
-import { jsPDF } from 'jspdf';
-import { Document, Packer, Paragraph, TextRun } from 'docx';
-import { saveAs } from 'file-saver';
 
-export const generatePDF = (content: string, title: string) => {
+export const generatePDF = async (content: string, title: string) => {
+  const { jsPDF } = await import('jspdf');
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 20;
@@ -54,6 +52,8 @@ export const generatePDF = (content: string, title: string) => {
 };
 
 export const generateDOCX = async (content: string, title: string) => {
+  const { Document, Packer, Paragraph, TextRun } = await import('docx');
+  const { saveAs } = await import('file-saver');
   const doc = new Document({
     sections: [{
       properties: {},

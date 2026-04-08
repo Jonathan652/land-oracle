@@ -57,7 +57,7 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
                 </div>
               </div>
 
-              <div className="p-4 sm:p-6 bg-slate-50/50 rounded-xl sm:rounded-2xl border border-slate-100 text-[10px] sm:text-[11px] text-slate-400 italic leading-relaxed">
+              <div className="p-4 sm:p-6 bg-slate-50/50 rounded-xl sm:rounded-2xl border border-slate-100 text-[10px] sm:text-[11px] text-slate-500 italic leading-relaxed">
                 By clicking "I Accept and Understand," you acknowledge that you have read this notice and agree that the system is a guidance tool, not a replacement for professional legal services.
               </div>
             </div>

@@ -55,10 +55,12 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { cn } from './lib/utils';
 import { Message, ChatSession, Lawyer } from './types';
-import { SYSTEM_INSTRUCTION, MOCK_LAWYERS } from './constants/systemInstructions';
+import { MOCK_LAWYERS } from './constants/systemInstructions';
 import { generatePDF, generateDOCX } from './lib/documentService';
-import { LegalNoticeModal } from './components/LegalNoticeModal';
 import { Roadmap } from './types';
+
+const LegalNoticeModal = React.lazy(() => import('./components/LegalNoticeModal').then(m => ({ default: m.LegalNoticeModal })));
+const MarkdownRenderer = React.lazy(() => import('./components/MarkdownRenderer'));
 
 // --- Components ---
 const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: 'en' | 'lg' }) => (
@@ -70,7 +72,7 @@ const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: '
         </div>
         <h3 className="font-display font-bold text-lg sm:text-xl text-[#0B0F1A]">{roadmap.title}</h3>
       </div>
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
         {language === 'en' ? 'Interactive Legal Roadmap' : 'Enkola y\'amateeka ey\'omulala'}
       </p>
     </div>
@@ -112,7 +114,7 @@ const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: '
 );
 
 // --- Oracle Core ---
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -648,6 +650,7 @@ export default function App() {
 
       while (retries >= 0) {
         try {
+          const ai = getAI();
           const transcriptionPromise = ai.models.generateContent({
             model: "gemini-3-flash-preview",
             contents: { 
@@ -694,12 +697,14 @@ export default function App() {
       
       updateSessionMessages(prev => [...prev, assistantMessage]);
 
+      const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
       const systemPrompt = isDocumentMode 
         ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
         : SYSTEM_INSTRUCTION;
 
       if (isStreamingMode) {
         try {
+          const ai = getAI();
           const streamPromise = ai.models.generateContentStream({
             model: "gemini-3-flash-preview",
             contents: { 
@@ -743,6 +748,7 @@ export default function App() {
           throw err;
         }
       } else {
+        const ai = getAI();
         const responsePromise = ai.models.generateContent({
           model: "gemini-3-flash-preview",
           contents: { 
@@ -1181,6 +1187,8 @@ export default function App() {
     setVerificationSteps([]);
 
     try {
+      const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
+      const ai = getAI();
       addVerificationStep(language === 'en' ? "Analyzing legal intent..." : "Okukebera ekigendererwa...");
       
       const assistantMessageId = generateId();
@@ -1357,7 +1365,11 @@ export default function App() {
 
   return (
     <div className="flex h-[100dvh] bg-[#F8FAFC] overflow-hidden font-sans selection:bg-[#C5A059]/20">
-      <LegalNoticeModal isOpen={showLegalNotice} onAccept={handleAcceptLegalNotice} />
+      <React.Suspense fallback={null}>
+        {showLegalNotice && (
+          <LegalNoticeModal isOpen={showLegalNotice} onAccept={handleAcceptLegalNotice} />
+        )}
+      </React.Suspense>
       
       {/* Sidebar Overlay */}
       <AnimatePresence>
@@ -1374,7 +1386,7 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "bg-[#0B0F1A] text-slate-400 w-72 sm:w-80 flex-shrink-0 flex flex-col transition-all duration-300 border-r border-white/5 z-50 fixed inset-y-0 lg:relative shadow-2xl safe-left",
+        "bg-[#0B0F1A] text-slate-300 w-72 sm:w-80 flex-shrink-0 flex flex-col transition-all duration-300 border-r border-white/5 z-50 fixed inset-y-0 lg:relative shadow-2xl safe-left",
         !isSidebarOpen && "-translate-x-full lg:-ml-80"
       )}>
         <div className="p-5 sm:p-6 border-b border-white/5 flex items-center justify-between shrink-0">
@@ -1563,7 +1575,7 @@ export default function App() {
               onClick={() => setAutoTalkBack(!autoTalkBack)}
               className={cn(
                 "p-1.5 sm:p-2 rounded-lg transition-all",
-                autoTalkBack ? "text-[#C5A059] bg-[#C5A059]/5" : "text-slate-400 hover:bg-slate-50"
+                autoTalkBack ? "text-[#C5A059] bg-[#C5A059]/5" : "text-slate-500 hover:bg-slate-50"
               )}
               aria-label={language === 'en' ? (autoTalkBack ? "Disable Voice" : "Enable Voice") : (autoTalkBack ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
               title={language === 'en' ? (autoTalkBack ? "Disable Voice" : "Enable Voice") : (autoTalkBack ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
@@ -1627,7 +1639,7 @@ export default function App() {
                           onClick={() => handleSend(language === 'en' ? q.en : q.lg)} 
                           className="p-5 sm:p-8 text-left bg-white border border-slate-100 rounded-2xl sm:rounded-[2rem] hover:border-[#C5A059]/30 hover:shadow-2xl hover:shadow-[#C5A059]/10 transition-all group flex items-start gap-4 sm:gap-6"
                         >
-                          <div className="p-3 sm:p-4 bg-slate-50 rounded-xl sm:rounded-2xl text-slate-400 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all shrink-0 shadow-sm">
+                          <div className="p-3 sm:p-4 bg-slate-50 rounded-xl sm:rounded-2xl text-slate-500 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all shrink-0 shadow-sm">
                             {i === 0 && <FileSearch size={20} className="sm:w-6 sm:h-6" />}
                             {i === 1 && <ShieldCheck size={20} className="sm:w-6 sm:h-6" />}
                             {i === 2 && <Gavel size={20} className="sm:w-6 sm:h-6" />}
@@ -1635,7 +1647,7 @@ export default function App() {
                           </div>
                           <div>
                             <p className="font-display font-bold text-base sm:text-lg text-[#0B0F1A] leading-snug group-hover:text-[#8B6E37] transition-colors mb-1 sm:mb-2">{language === 'en' ? q.en : q.lg}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                               {language === 'en' ? 'Start inquiry' : 'Tandika okubuuza'} <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
                             </p>
                           </div>
@@ -1682,9 +1694,9 @@ export default function App() {
                             </div>
                           )}
                           <div className="markdown-body prose prose-slate prose-sm max-w-none text-sm sm:text-base">
-                            <Markdown remarkPlugins={[remarkGfm]}>
-                              {streamingContent[m.id] || m.content}
-                            </Markdown>
+                            <React.Suspense fallback={<div className="animate-pulse h-20 bg-slate-100 rounded-lg" />}>
+                              <MarkdownRenderer content={streamingContent[m.id] || m.content} />
+                            </React.Suspense>
                           </div>
                           {m.roadmap && <RoadmapComponent roadmap={m.roadmap} language={language} />}
                           <div className="flex items-center justify-between mt-4 sm:mt-6">
@@ -1724,7 +1736,7 @@ export default function App() {
                   {MOCK_LAWYERS.map(lawyer => (
                     <div key={lawyer.id} className="bg-white border border-slate-100 rounded-2xl sm:rounded-[2rem] p-6 sm:p-8 shadow-sm hover:shadow-2xl hover:shadow-[#C5A059]/5 transition-all group">
                       <div className="flex justify-between items-start mb-6">
-                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all">
+                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-500 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all">
                           <User size={32} />
                         </div>
                         {lawyer.verified && (
@@ -1737,7 +1749,7 @@ export default function App() {
                       <p className="text-sm text-[#C5A059] font-bold mb-2 uppercase tracking-wide">{lawyer.firm}</p>
                       <p className="text-sm text-slate-500 mb-6 leading-relaxed">{lawyer.specialty}</p>
                       <div className="flex items-center justify-between pt-6 border-t border-slate-50">
-                        <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest">
+                        <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-widest">
                           <Map size={14} className="text-[#C5A059]" /> {lawyer.location}
                         </div>
                         <button className="text-[#0B0F1A] font-bold text-sm hover:text-[#C5A059] transition-colors flex items-center gap-2 group/btn">
@@ -1839,7 +1851,7 @@ export default function App() {
                         setIsTranscribing(false);
                         setIsLoading(false);
                       }}
-                      className="text-slate-400 hover:text-red-500 transition-colors p-2"
+                      className="text-slate-500 hover:text-red-500 transition-colors p-2"
                     >
                       <X size={20} />
                     </button>
@@ -1859,7 +1871,7 @@ export default function App() {
                             <button 
                               type="button"
                               onClick={() => removeFile(i)}
-                              className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                              className="p-2 text-slate-500 hover:text-red-500 transition-colors"
                               aria-label={language === 'en' ? `Remove ${file.name}` : `Ggyamu ${file.name}`}
                             >
                               <X size={14} />
@@ -1909,7 +1921,7 @@ export default function App() {
                         <button 
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-slate-400 hover:bg-slate-200 transition-all"
+                          className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-slate-500 hover:bg-slate-200 transition-all"
                           title={language === 'en' ? "Attach files" : "Gattako fayiro"}
                         >
                           <Paperclip size={16} className="sm:w-5 sm:h-5" />
@@ -1927,7 +1939,7 @@ export default function App() {
                           onClick={toggleRecording}
                           className={cn(
                             "p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-all",
-                            "text-slate-400 hover:bg-slate-200"
+                            "text-slate-500 hover:bg-slate-200"
                           )}
                           aria-label={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : (isRecording ? "Yimiriza" : "Koleeza Eddoboozi")}
                           title={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : (isRecording ? "Yimiriza" : "Koleeza Eddoboozi")}
@@ -1948,7 +1960,7 @@ export default function App() {
                 )}
               </div>
             </form>
-            <p className="text-[8px] sm:text-[10px] text-center text-slate-400 mt-3 sm:mt-6 font-bold uppercase tracking-[0.1em] px-4">
+            <p className="text-[8px] sm:text-[10px] text-center text-slate-500 mt-3 sm:mt-6 font-bold uppercase tracking-[0.1em] px-4">
               {language === 'en' 
                 ? 'Statutory accuracy is verified against the Constitution and Laws of Uganda.' 
                 : 'Obutuufu bw\'amateeka bukakasibwa okusinziira ku nsonga z\'eggwanga n\'amateeka.'}
@@ -1976,7 +1988,7 @@ export default function App() {
                     </div>
                     <h2 className="text-2xl sm:text-3xl font-display font-bold text-[#0B0F1A] tracking-tight">{authMode === 'signin' ? 'Welcome Back' : 'Create Account'}</h2>
                   </div>
-                  <button onClick={() => setShowAuthModal(false)} className="p-2 hover:bg-slate-50 rounded-full text-slate-400 transition-colors"><X size={20} className="sm:w-6 sm:h-6" /></button>
+                  <button onClick={() => setShowAuthModal(false)} className="p-2 hover:bg-slate-50 rounded-full text-slate-500 transition-colors"><X size={20} className="sm:w-6 sm:h-6" /></button>
                 </div>
 
                 <div className="space-y-4 sm:space-y-5">
@@ -1989,7 +2001,7 @@ export default function App() {
                   </button>
                   <div className="relative py-4 sm:py-6">
                     <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-                    <div className="relative flex justify-center text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] bg-white px-4">Or use email</div>
+                    <div className="relative flex justify-center text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] bg-white px-4">Or use email</div>
                   </div>
                   <input 
                     type="email" 
