@@ -36,7 +36,10 @@ import {
   MoreVertical,
   Trash2,
   Archive,
-  Star
+  Star,
+  Paperclip,
+  Image as ImageIcon,
+  File as FileIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -140,6 +143,8 @@ export default function App() {
   const [showLegalNotice, setShowLegalNotice] = useState(() => {
     return localStorage.getItem('uganda_law_oracle_legal_notice_accepted') !== 'true';
   });
+  const [attachedFiles, setAttachedFiles] = useState<{ name: string, data: string, mimeType: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [verificationSteps, setVerificationSteps] = useState<string[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -167,6 +172,41 @@ export default function App() {
   const handleAcceptLegalNotice = () => {
     localStorage.setItem('uganda_law_oracle_legal_notice_accepted', 'true');
     setShowLegalNotice(false);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles = [...attachedFiles];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        setRecordingError(language === 'en' ? "File too large (max 10MB)" : "Fayiro nnene nnyo (max 10MB)");
+        continue;
+      }
+
+      const reader = new FileReader();
+      const fileData = await new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      newFiles.push({
+        name: file.name,
+        data: fileData,
+        mimeType: file.type
+      });
+    }
+    setAttachedFiles(newFiles);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const addVerificationStep = (step: string) => {
@@ -942,7 +982,7 @@ export default function App() {
             if (userSnap.exists()) {
               const data = userSnap.data();
               setFreeQuestionsRemaining(Math.max(0, 2 - (data.freeQuestionsUsed || 0)));
-              setVoiceMessagesRemaining(Math.max(0, 2 - (data.voiceMessagesUsed || 0)));
+              setVoiceMessagesRemaining(Math.max(0, 5 - (data.voiceMessagesUsed || 0)));
               setIsPro(data.isPro || false);
             } else {
               // Create new profile
@@ -958,7 +998,7 @@ export default function App() {
                 createdAt: serverTimestamp()
               });
               setFreeQuestionsRemaining(2);
-              setVoiceMessagesRemaining(2);
+              setVoiceMessagesRemaining(5);
             }
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
@@ -967,7 +1007,7 @@ export default function App() {
         setUser(null);
         setIsPro(false);
         setFreeQuestionsRemaining(2); // Reset for guests
-        setVoiceMessagesRemaining(2); // Guests can use voice
+        setVoiceMessagesRemaining(5); // Guests can use voice
         setPremiumReportsCount(0); // Reset report count for guests
       }
       setIsAuthLoading(false);
@@ -1027,17 +1067,28 @@ export default function App() {
 
   const handleSend = async (textOverride?: string) => {
     const messageText = textOverride || input;
-    if (!messageText.trim() || isLoading) return;
+    const currentFiles = [...attachedFiles];
+    if (!messageText.trim() && currentFiles.length === 0) return;
+    if (isLoading) return;
     
     // Mobile Audio Unlock: Resume context immediately on user click
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
 
-    const userMessage: Message = { id: generateId(), role: 'user', content: messageText, timestamp: new Date() };
+    const userMessage: Message = { 
+      id: generateId(), 
+      role: 'user', 
+      content: messageText, 
+      timestamp: new Date(),
+      attachments: currentFiles.length > 0 ? currentFiles : undefined
+    };
     const promptMessages = [...messages, userMessage];
     updateSessionMessages(prev => [...prev, userMessage]);
     
-    if (!textOverride) setInput('');
+    if (!textOverride) {
+      setInput('');
+      setAttachedFiles([]);
+    }
     setIsLoading(true);
     setVerificationSteps([]);
 
@@ -1075,10 +1126,19 @@ export default function App() {
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
           model: "gemini-3-flash-preview",
-          contents: promptMessages.map(m => ({
-            role: m.role,
-            parts: [{ text: m.content }]
-          })),
+          contents: promptMessages.map(m => {
+            const parts: any[] = [];
+            if (m.attachments) {
+              m.attachments.forEach(a => {
+                parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
+              });
+            }
+            parts.push({ text: m.content });
+            return {
+              role: m.role === 'user' ? 'user' : 'model',
+              parts
+            };
+          }),
           config: modelConfig,
         });
 
@@ -1130,10 +1190,19 @@ export default function App() {
       } else {
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: promptMessages.map(m => ({
-            role: m.role,
-            parts: [{ text: m.content }]
-          })),
+          contents: promptMessages.map(m => {
+            const parts: any[] = [];
+            if (m.attachments) {
+              m.attachments.forEach(a => {
+                parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
+              });
+            }
+            parts.push({ text: m.content });
+            return {
+              role: m.role === 'user' ? 'user' : 'model',
+              parts
+            };
+          }),
           config: modelConfig,
         });
 
@@ -1280,7 +1349,24 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-4 border-t border-white/5 bg-black/20 shrink-0">
+        <div className="p-4 border-t border-white/5 bg-black/20 shrink-0 space-y-4">
+          {!isPro && (
+            <div className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-3">
+              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest">
+                <span className="text-slate-500">{language === 'en' ? 'Voice Messages' : 'Obubaka bw\'eddoboozi'}</span>
+                <span className={cn(voiceMessagesRemaining <= 1 ? "text-red-400" : "text-[#C5A059]")}>
+                  {voiceMessagesRemaining} {language === 'en' ? 'Left' : 'Ebisigadde'}
+                </span>
+              </div>
+              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(voiceMessagesRemaining / 5) * 100}%` }}
+                  className="h-full bg-[#C5A059]"
+                />
+              </div>
+            </div>
+          )}
           {user ? (
             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
               <div className="flex items-center gap-3 min-w-0">
@@ -1449,6 +1535,19 @@ export default function App() {
                               <span>Verified Statutory Guidance</span>
                             </div>
                           )}
+                          {m.attachments && m.attachments.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              {m.attachments.map((file, idx) => (
+                                <div key={idx} className={cn(
+                                  "flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border",
+                                  m.role === 'user' ? "bg-white/10 border-white/20 text-white" : "bg-slate-50 border-slate-100 text-slate-600"
+                                )}>
+                                  {file.mimeType.startsWith('image/') ? <ImageIcon size={14} /> : <FileIcon size={14} />}
+                                  <span className="truncate max-w-[120px]">{file.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <div className="markdown-body prose prose-slate prose-sm max-w-none text-sm sm:text-base">
                             <Markdown remarkPlugins={[remarkGfm]}>
                               {streamingContent[m.id] || m.content}
@@ -1599,6 +1698,27 @@ export default function App() {
                   </div>
                 ) : (
                   <>
+                    {attachedFiles.length > 0 && (
+                      <div className="flex flex-wrap gap-2 p-3 sm:p-4 border-b border-slate-100">
+                        {attachedFiles.map((file, i) => (
+                          <div key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2 pr-1 shadow-sm group">
+                            {file.mimeType.startsWith('image/') ? (
+                              <ImageIcon size={16} className="text-[#C5A059]" />
+                            ) : (
+                              <FileIcon size={16} className="text-blue-500" />
+                            )}
+                            <span className="text-[10px] font-medium text-slate-600 truncate max-w-[100px]">{file.name}</span>
+                            <button 
+                              type="button"
+                              onClick={() => removeFile(i)}
+                              className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
@@ -1627,6 +1747,22 @@ export default function App() {
                           <span className="xs:hidden">DOC</span>
                         </button>
                         <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
+                        <button 
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-slate-400 hover:bg-slate-200 transition-all"
+                          title={language === 'en' ? "Attach files" : "Gattako fayiro"}
+                        >
+                          <Paperclip size={16} className="sm:w-5 sm:h-5" />
+                        </button>
+                        <input 
+                          type="file" 
+                          ref={fileInputRef} 
+                          onChange={handleFileChange} 
+                          className="hidden" 
+                          multiple 
+                          accept="image/*,.pdf,.doc,.docx,.txt"
+                        />
                         <button 
                           type="button"
                           onClick={toggleRecording}
