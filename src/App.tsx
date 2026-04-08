@@ -269,57 +269,66 @@ export default function App() {
     if (!isPro && freeQuestionsRemaining <= 0) return;
     setRecordingError(null);
     
-    // 1. Cleanup any existing recorder
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {
-        console.warn("Error stopping previous recorder:", e);
+    // 1. Aggressive Cleanup of any existing hardware state
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.onerror = null;
+      mediaRecorderRef.current.ondataavailable = null;
+      if (mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (e) {
+          console.warn("Error stopping previous recorder:", e);
+        }
       }
+      mediaRecorderRef.current = null;
     }
 
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+      } catch (e) {
+        console.warn("Error stopping previous stream tracks:", e);
+      }
+      streamRef.current = null;
+    }
+    
     if (!navigator.mediaDevices || !window.MediaRecorder) {
       setRecordingError(language === 'en' ? "Recording not supported in this browser." : "Okukwata eddoboozi tekuwagirwa mu browser eno.");
       return;
     }
 
-    let stream: MediaStream | null = streamRef.current;
-    
-    // Check if existing stream is still active
-    if (stream && !stream.active) {
-      stream = null;
-    }
+    let stream: MediaStream | null = null;
 
     try {
       setRecordingError(null);
       setRecordedBlob(null);
       setAudioPreview(null);
       
-      // 2. Request fresh stream only if we don't have an active one
-      if (!stream) {
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          } 
-        });
-        streamRef.current = stream;
-      }
+      // 2. Request fresh stream every time to avoid "stale" hardware issues
+      stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      streamRef.current = stream;
       
       const mimeTypes = [
         'audio/webm;codecs=opus',
         'audio/webm',
+        'audio/ogg;codecs=opus',
         'audio/mp4',
         'audio/aac',
-        'audio/mpeg',
-        'audio/ogg;codecs=opus',
-        'audio/ogg',
         'audio/wav'
       ];
       
       const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
-      console.log("Selected MimeType:", mimeType);
+      console.log("Starting recording with MimeType:", mimeType);
 
       const mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType || undefined });
       const actualMimeType = mediaRecorder.mimeType || mimeType || 'audio/webm';
@@ -351,8 +360,13 @@ export default function App() {
       };
 
       mediaRecorder.onstop = async () => {
-        // Note: We DON'T stop the stream tracks here to allow reuse and avoid repeated permission prompts
-        // The stream will be cleaned up on unmount or if explicitly needed.
+        // 3. Release hardware immediately to prevent "war"
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+        if (streamRef.current === stream) {
+          streamRef.current = null;
+        }
         
         if (audioChunksRef.current.length === 0) {
           console.warn("No audio data captured.");
@@ -362,10 +376,12 @@ export default function App() {
         }
 
         const audioBlob = new Blob(audioChunksRef.current, { type: actualMimeType });
-        console.log("Recording stopped. Blob size:", Math.round(audioBlob.size / 1024), "KB", "Type:", audioBlob.type);
+        const sizeKB = Math.round(audioBlob.size / 1024);
+        console.log("Recording stopped. Blob size:", sizeKB, "KB", "Type:", audioBlob.type);
 
-        if (audioBlob.size < 2000) { // Increased threshold to 2KB
-          setRecordingError(language === 'en' ? "Audio too short. Please speak longer." : "Eddoboozi liyimpitidde nnyo. Gezaako nate.");
+        // If size is too small, it's likely silence or a hardware glitch
+        if (audioBlob.size < 4000) { // Increased threshold to 4KB (approx 1-2s of audio)
+          setRecordingError(language === 'en' ? `Audio too short or silent (${sizeKB}KB). Please speak longer.` : `Eddoboozi liyimpitidde nnyo oba tewali ddoboozi (${sizeKB}KB). Gezaako nate.`);
           setIsRecording(false);
           return;
         }
@@ -388,8 +404,8 @@ export default function App() {
       }
       
       let errorMsg = language === 'en' 
-        ? "Microphone access denied or not found. Please check browser permissions." 
-        : "Akazindaalo kagaanye. Kakasa nti otaddeko olukusa mu browser yo.";
+        ? "Microphone access denied or busy. Please check browser permissions and other apps." 
+        : "Akazindaalo kagaanye oba kali mu kukozesebwa. Kakasa nti otaddeko olukusa era tewali pulogulaamu ndala ekakozesa.";
       
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         errorMsg += language === 'en' 
@@ -399,6 +415,10 @@ export default function App() {
         errorMsg = language === 'en' 
           ? "No microphone found. Please connect one." 
           : "Tewali kazindaalo kazuliddwa. Teekako akazindaalo.";
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        errorMsg = language === 'en'
+          ? "Microphone is busy or being used by another app. Please close other apps or refresh."
+          : "Akazindaalo kali mu kukozesebwa pulogulaamu endala. Ggalawo pulogulaamu endala oba ddamu ogulewo pulogulaamu eno.";
       }
 
       // Check if in iframe
@@ -530,7 +550,7 @@ export default function App() {
       while (retries >= 0) {
         try {
           const transcriptionPromise = ai.models.generateContent({
-            model: "gemini-1.5-flash",
+            model: "gemini-3-flash-preview",
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
@@ -558,7 +578,7 @@ export default function App() {
 
       if (!transcriptionResponse) throw new Error("Transcription failed");
 
-      const transcribedText = transcriptionResponse.response.text().trim() || (language === 'en' ? "[Transcription failed]" : "[Okukyusa kulemye]");
+      const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : "[Okukyusa kulemye]");
       
       // 5. Update user message with transcribed text
       updateSessionMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, content: transcribedText } : m));
@@ -582,7 +602,7 @@ export default function App() {
       if (isStreamingMode) {
         try {
           const streamPromise = ai.models.generateContentStream({
-            model: "gemini-1.5-flash",
+            model: "gemini-3-flash-preview",
             contents: { 
               parts: [
                 { text: transcribedText }
@@ -602,7 +622,7 @@ export default function App() {
 
           let fullText = "";
           for await (const chunk of stream) {
-            fullText += chunk.text();
+            fullText += chunk.text || "";
             setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
             
             const container = document.documentElement;
@@ -625,7 +645,7 @@ export default function App() {
         }
       } else {
         const responsePromise = ai.models.generateContent({
-          model: "gemini-1.5-flash",
+          model: "gemini-3-flash-preview",
           contents: { 
             parts: [
               { text: transcribedText }
@@ -642,7 +662,7 @@ export default function App() {
         );
 
         const response = await Promise.race([responsePromise, timeoutPromise]) as any;
-        const fullText = response.response.text() || "I apologize.";
+        const fullText = response.text || "I apologize.";
         updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         speakText(fullText, assistantMessageId);
       }
