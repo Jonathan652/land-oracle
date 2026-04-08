@@ -708,6 +708,12 @@ export default function App() {
       return;
     }
 
+    // 2. Check voice quota
+    if (!isPro && voiceMessagesRemaining <= 0) {
+      setVoiceError(language === 'en' ? "Voice limit reached. Upgrade to Pro for unlimited voice." : "Eddoboozi liweddeko. Gula Pro okusobola okukozesa eddoboozi mu ngeri etaliiko kkomo.");
+      return;
+    }
+
     // Ensure AudioContext is initialized/resumed
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -834,17 +840,19 @@ export default function App() {
         setAudioCache(prev => ({ ...prev, [messageId]: finalBuffer }));
       }
 
-      // 3. Increment usage in Firestore if not Pro
+      // 3. Increment usage if not Pro
       if (hasStarted && !isPro) {
-        const userRef = doc(db, 'users', user.uid);
-        try {
-          const userSnap = await getDoc(userRef);
-          const currentUsed = userSnap.exists() ? (userSnap.data().voiceMessagesUsed || 0) : 0;
-          await updateDoc(userRef, { voiceMessagesUsed: currentUsed + 1 });
-          setVoiceMessagesRemaining(prev => Math.max(0, prev - 1));
-        } catch (error) {
-          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+        if (user) {
+          const userRef = doc(db, 'users', user.uid);
+          try {
+            const userSnap = await getDoc(userRef);
+            const currentUsed = userSnap.exists() ? (userSnap.data().voiceMessagesUsed || 0) : 0;
+            await updateDoc(userRef, { voiceMessagesUsed: currentUsed + 1 });
+          } catch (error) {
+            console.warn("Failed to sync voice usage to Firestore:", error);
+          }
         }
+        setVoiceMessagesRemaining(prev => Math.max(0, prev - 1));
       }
     } catch (error: any) { 
       console.error("TTS Error:", error);
@@ -855,6 +863,14 @@ export default function App() {
           ? "📢 Voice limit reached for now. You can still read the text below!" 
           : "📢 Eddoboozi liwummuddeko. Kyokka okyasobola okusoma obubaka wansi!";
         setAutoTalkBack(false);
+      } else if (error?.message?.includes("not found") || error?.message?.includes("model")) {
+        errorMsg = language === 'en'
+          ? "📢 Voice model is updating. Please try again in a moment."
+          : "📢 Eddoboozi likyakyusibwamu. Gezaako nate mu kaseera katono.";
+      } else if (!navigator.onLine) {
+        errorMsg = language === 'en'
+          ? "📢 No internet connection for voice features."
+          : "📢 Tewali yintaneeti okusobola okuwuliriza eddoboozi.";
       } else {
         errorMsg = language === 'en' 
           ? "📢 Voice service is temporarily unavailable." 
@@ -951,7 +967,7 @@ export default function App() {
         setUser(null);
         setIsPro(false);
         setFreeQuestionsRemaining(2); // Reset for guests
-        setVoiceMessagesRemaining(0); // Guests can't use voice
+        setVoiceMessagesRemaining(2); // Guests can use voice
         setPremiumReportsCount(0); // Reset report count for guests
       }
       setIsAuthLoading(false);
@@ -1543,13 +1559,24 @@ export default function App() {
                       </span>
                     </div>
                     <Waveform />
-                    <button
-                      type="button"
-                      onClick={stopRecording}
-                      className="p-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 active:scale-95"
-                    >
-                      <Square size={20} fill="currentColor" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelRecording}
+                        className="p-3 bg-slate-200 text-slate-600 rounded-full hover:bg-slate-300 transition-all active:scale-95"
+                        title={language === 'en' ? "Cancel" : "Sazaamu"}
+                      >
+                        <X size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopRecording}
+                        className="p-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 active:scale-95"
+                        title={language === 'en' ? "Stop & Send" : "Yimiriza omuweereze"}
+                      >
+                        <Square size={20} fill="currentColor" />
+                      </button>
+                    </div>
                   </div>
                 ) : isTranscribing ? (
                   <div className="w-full flex items-center justify-between p-4 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200">
