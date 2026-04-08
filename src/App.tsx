@@ -39,7 +39,13 @@ import {
   Star,
   Paperclip,
   Image as ImageIcon,
-  File as FileIcon
+  File as FileIcon,
+  Share2,
+  MapPin,
+  Clock,
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -52,6 +58,58 @@ import { Message, ChatSession, Lawyer } from './types';
 import { SYSTEM_INSTRUCTION, MOCK_LAWYERS } from './constants/systemInstructions';
 import { generatePDF, generateDOCX } from './lib/documentService';
 import { LegalNoticeModal } from './components/LegalNoticeModal';
+import { Roadmap } from './types';
+
+// --- Components ---
+const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: 'en' | 'lg' }) => (
+  <div className="my-6 sm:my-8 bg-slate-50 border border-slate-200 rounded-2xl sm:rounded-[2.5rem] overflow-hidden shadow-sm">
+    <div className="p-5 sm:p-8 border-b border-slate-200 bg-white">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="p-2 bg-[#C5A059]/10 text-[#C5A059] rounded-lg">
+          <MapPin size={20} />
+        </div>
+        <h3 className="font-display font-bold text-lg sm:text-xl text-[#0B0F1A]">{roadmap.title}</h3>
+      </div>
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        {language === 'en' ? 'Interactive Legal Roadmap' : 'Enkola y\'amateeka ey\'omulala'}
+      </p>
+    </div>
+    <div className="p-5 sm:p-8 space-y-8 relative">
+      <div className="absolute left-[31px] sm:left-[43px] top-12 bottom-12 w-0.5 bg-slate-200" />
+      {roadmap.steps.map((step, idx) => (
+        <motion.div 
+          key={idx}
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: idx * 0.1 }}
+          className="flex gap-4 sm:gap-6 relative z-10"
+        >
+          <div className={cn(
+            "w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all",
+            step.status === 'completed' ? "bg-green-500 border-green-500 text-white" :
+            step.status === 'current' ? "bg-white border-[#C5A059] text-[#C5A059] shadow-lg shadow-[#C5A059]/20" :
+            "bg-white border-slate-200 text-slate-300"
+          )}>
+            {step.status === 'completed' ? <CheckCircle size={14} /> : <span className="text-[10px] font-bold">{idx + 1}</span>}
+          </div>
+          <div className="flex-1 pt-0.5 sm:pt-1">
+            <h4 className={cn(
+              "font-bold text-sm sm:text-base mb-1",
+              step.status === 'current' ? "text-[#0B0F1A]" : "text-slate-600"
+            )}>{step.title}</h4>
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-2">{step.description}</p>
+            {step.statute && (
+              <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 text-slate-500 rounded-md text-[9px] font-bold uppercase tracking-wider">
+                <Gavel size={10} />
+                {step.statute}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  </div>
+);
 
 // --- Oracle Core ---
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
@@ -1065,6 +1123,36 @@ export default function App() {
     }
   };
 
+  const generateLegalRoadmapTool: FunctionDeclaration = {
+    name: "generateLegalRoadmap",
+    description: "Generates a visual step-by-step roadmap for a legal process (e.g., land registration, filing a suit).",
+    parameters: {
+      type: Type.OBJECT,
+      description: "The parameters for roadmap generation.",
+      properties: {
+        title: {
+          type: Type.STRING,
+          description: "A clear title for the legal process."
+        },
+        steps: {
+          type: Type.ARRAY,
+          description: "The steps involved in the process.",
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING, description: "Short title of the step." },
+              description: { type: Type.STRING, description: "Detailed explanation of what to do." },
+              status: { type: Type.STRING, enum: ["completed", "current", "upcoming"], description: "Current status of this step in the context of the user's query." },
+              statute: { type: Type.STRING, description: "Optional reference to a specific law or section." }
+            },
+            required: ["title", "description", "status"]
+          }
+        }
+      },
+      required: ["title", "steps"]
+    }
+  };
+
   const handleSend = async (textOverride?: string) => {
     const messageText = textOverride || input;
     const currentFiles = [...attachedFiles];
@@ -1114,7 +1202,7 @@ export default function App() {
         systemInstruction: systemPrompt,
         temperature: 0.4,
         maxOutputTokens: 2048,
-        tools: [{ functionDeclarations: [generateLegalDocumentTool] }]
+        tools: [{ functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }]
       };
 
       addVerificationStep(language === 'en' ? "Scanning Constitution & Statutes..." : "Okukebera ensengeka y'eggwanga n'amateeka...");
@@ -1161,6 +1249,9 @@ export default function App() {
                 
                 fullText += successMsg;
                 setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+              } else if (call.name === "generateLegalRoadmap") {
+                const roadmapData = call.args as any;
+                updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
               }
             }
             continue;
@@ -1221,6 +1312,9 @@ export default function App() {
                 : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
               
               fullText = successMsg;
+            } else if (call.name === "generateLegalRoadmap") {
+              const roadmapData = call.args as any;
+              updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
             }
           }
         }
@@ -1289,7 +1383,10 @@ export default function App() {
               <Scale size={22} />
             </div>
             <div>
-              <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Oracle</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Oracle</h1>
+                <div className="px-1.5 py-0.5 bg-[#C5A059] text-[#0B0F1A] text-[8px] font-black rounded uppercase tracking-tighter">Pro</div>
+              </div>
               <p className="text-[10px] text-[#C5A059] font-bold uppercase tracking-[0.2em]">Legal Information System</p>
             </div>
           </div>
@@ -1316,6 +1413,24 @@ export default function App() {
             <MessageSquare size={18} />
             {language === 'en' ? 'New Legal Inquiry' : 'Okubuuza Okupya'}
           </button>
+
+          <div className="space-y-1 mb-6">
+            <p className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-[0.2em]">Statutory Updates</p>
+            <div className="px-4 space-y-3">
+              {[
+                { title: "Land Act Amendment 2024", date: "2 days ago" },
+                { title: "New Succession Rules", date: "1 week ago" }
+              ].map((news, idx) => (
+                <div key={idx} className="group cursor-default">
+                  <p className="text-[11px] text-white font-medium group-hover:text-[#C5A059] transition-colors">{news.title}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Clock size={10} className="text-slate-600" />
+                    <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider">{news.date}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="space-y-1">
             <p className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-[0.2em]">Recent Inquiries</p>
@@ -1553,11 +1668,26 @@ export default function App() {
                               {streamingContent[m.id] || m.content}
                             </Markdown>
                           </div>
-                          <div className={cn(
-                            "text-[9px] sm:text-[10px] mt-4 sm:mt-6 font-bold uppercase tracking-widest opacity-30",
-                            m.role === 'user' ? "text-right" : "text-left"
-                          )}>
-                            {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {m.roadmap && <RoadmapComponent roadmap={m.roadmap} language={language} />}
+                          <div className="flex items-center justify-between mt-4 sm:mt-6">
+                            <div className={cn(
+                              "text-[9px] sm:text-[10px] font-bold uppercase tracking-widest opacity-30"
+                            )}>
+                              {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={() => {
+                                  const text = streamingContent[m.id] || m.content;
+                                  const url = `https://wa.me/?text=${encodeURIComponent(`⚖️ *Uganda Law Oracle Summary*\n\n${text.substring(0, 500)}${text.length > 500 ? '...' : ''}\n\n_Get professional legal guidance at: ${window.location.href}_`)}`;
+                                  window.open(url, '_blank');
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-green-500/20 transition-all"
+                              >
+                                <Share2 size={12} />
+                                {language === 'en' ? 'Share to WhatsApp' : 'Gaba ku WhatsApp'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </motion.div>
@@ -1699,7 +1829,7 @@ export default function App() {
                 ) : (
                   <>
                     {attachedFiles.length > 0 && (
-                      <div className="flex flex-wrap gap-2 p-3 sm:p-4 border-b border-slate-100">
+                      <div className="flex flex-wrap items-center gap-2 p-3 sm:p-4 border-b border-slate-100">
                         {attachedFiles.map((file, i) => (
                           <div key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2 pr-1 shadow-sm group">
                             {file.mimeType.startsWith('image/') ? (
@@ -1717,6 +1847,14 @@ export default function App() {
                             </button>
                           </div>
                         ))}
+                        <button 
+                          type="button"
+                          onClick={() => handleSend(language === 'en' ? "Analyze these documents for statutory compliance and legal risks in Uganda." : "Kebera ebiwandiiko bino olabe oba bituukana n'amateeka ga Uganda era olabe obuzibu obuyinza okubirimu.")}
+                          className="flex items-center gap-2 px-3 py-2 bg-[#0B0F1A] text-[#C5A059] rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-[#1a1f2e] transition-all shadow-lg shadow-[#0B0F1A]/10 ml-auto"
+                        >
+                          <ShieldCheck size={14} />
+                          {language === 'en' ? 'Scan Documents' : 'Kebera ebiwandiiko'}
+                        </button>
                       </div>
                     )}
                     <textarea

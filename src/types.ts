@@ -4,6 +4,18 @@ export interface Attachment {
   data: string; // base64
 }
 
+export interface RoadmapStep {
+  title: string;
+  description: string;
+  status: 'completed' | 'current' | 'upcoming';
+  statute?: string;
+}
+
+export interface Roadmap {
+  title: string;
+  steps: RoadmapStep[];
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -11,6 +23,7 @@ export interface Message {
   timestamp: Date;
   audioBuffer?: AudioBuffer;
   attachments?: Attachment[];
+  roadmap?: Roadmap;
 }
 
 export interface ChatSession {
