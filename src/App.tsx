@@ -265,6 +265,7 @@ export default function App() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const startRecording = async () => {
+    if (isRecording || isTranscribing) return;
     if (!isPro && freeQuestionsRemaining <= 0) return;
     setRecordingError(null);
     
@@ -276,15 +277,35 @@ export default function App() {
         console.warn("Error stopping previous recorder:", e);
       }
     }
+
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      } catch (e) {
+        console.warn("Error stopping previous stream tracks:", e);
+      }
+      streamRef.current = null;
+    }
     
     if (!navigator.mediaDevices || !window.MediaRecorder) {
       setRecordingError(language === 'en' ? "Recording not supported in this browser." : "Okukwata eddoboozi tekuwagirwa mu browser eno.");
       return;
     }
 
+    let stream: MediaStream | null = null;
     try {
-      // 2. Request fresh stream
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setRecordingError(null);
+      setRecordedBlob(null);
+      setAudioPreview(null);
+      
+      // 2. Request fresh stream with specific constraints for better compatibility
+      stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
       
       const mimeTypes = [
         'audio/webm;codecs=opus',
@@ -298,11 +319,13 @@ export default function App() {
       ];
       
       const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+      console.log("Selected MimeType:", mimeType);
 
       const mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType || undefined });
       const actualMimeType = mediaRecorder.mimeType || mimeType || 'audio/webm';
       
       mediaRecorderRef.current = mediaRecorder;
+      streamRef.current = stream;
       audioChunksRef.current = [];
       setRecordingDuration(0);
 
@@ -322,20 +345,37 @@ export default function App() {
         }
       };
 
+      mediaRecorder.onerror = (event: any) => {
+        console.error("MediaRecorder Error:", event.error);
+        setRecordingError(language === 'en' ? "Recording error occurred." : "Wabaddewo ekikyamu mu kukwata eddoboozi.");
+        stopRecording();
+      };
+
       mediaRecorder.onstop = async () => {
         // 3. Release hardware immediately
-        stream.getTracks().forEach(track => track.stop());
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+        if (streamRef.current === stream) {
+          streamRef.current = null;
+        }
         
         if (audioChunksRef.current.length === 0) {
           console.warn("No audio data captured.");
           setRecordingError(language === 'en' ? "No audio data captured. Please try again." : "Tewali ddoboozi likwatiddwa. Gezaako nate.");
+          setIsRecording(false);
           return;
         }
+
         const audioBlob = new Blob(audioChunksRef.current, { type: actualMimeType });
+        console.log("Recording stopped. Blob size:", Math.round(audioBlob.size / 1024), "KB", "Type:", audioBlob.type);
+
         if (audioBlob.size < 1000) { // Less than 1KB is likely silence or error
           setRecordingError(language === 'en' ? "Audio too short. Please speak longer." : "Eddoboozi liyimpitidde nnyo. Gezaako nate.");
+          setIsRecording(false);
           return;
         }
+
         setRecordedBlob(audioBlob);
         setAudioPreview(URL.createObjectURL(audioBlob));
         if (timerRef.current) clearInterval(timerRef.current);
@@ -346,9 +386,35 @@ export default function App() {
 
       mediaRecorder.start(1000); // 1s chunks for better stability
       setIsRecording(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error accessing microphone:", err);
-      setRecordingError(language === 'en' ? "Microphone access denied or not found." : "Akazindaalo kagaanye okukozesebwa.");
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      
+      let errorMsg = language === 'en' 
+        ? "Microphone access denied or not found. Please check browser permissions." 
+        : "Akazindaalo kagaanye. Kakasa nti otaddeko olukusa mu browser yo.";
+      
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMsg += language === 'en' 
+          ? " (Permission Denied)" 
+          : " (Olukusa lugaanyiddwa)";
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        errorMsg = language === 'en' 
+          ? "No microphone found. Please connect one." 
+          : "Tewali kazindaalo kazuliddwa. Teekako akazindaalo.";
+      }
+
+      // Check if in iframe
+      if (window.self !== window.top) {
+        errorMsg += language === 'en'
+          ? " TIP: Try opening the app in a new tab for better microphone access."
+          : " TIP: Gezaako okuggulawo pulogulaamu eno mu tab empya okusobola okukozesa akazindaalo obulungi.";
+      }
+
+      setRecordingError(errorMsg);
+      setIsRecording(false);
     }
   };
 
@@ -373,10 +439,14 @@ export default function App() {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.warn("Error stopping recorder:", e);
+      }
     }
+    setIsRecording(false);
   };
 
   const sendRecordedAudio = async () => {
