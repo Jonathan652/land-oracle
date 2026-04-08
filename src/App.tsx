@@ -482,7 +482,8 @@ export default function App() {
     if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
 
-    if (!user && freeQuestionsRemaining <= 0) {
+    const currentUser = user || auth.currentUser;
+    if (!currentUser && freeQuestionsRemaining <= 0) {
       setShowAuthModal(true);
       setIsLoading(false);
       setIsTranscribing(false);
@@ -554,7 +555,7 @@ export default function App() {
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: "Transcribe the following audio precisely. The audio is in Luganda or English. Return the transcription in the original language spoken. If no speech is detected, return '[No speech detected]'." }
+                { text: `You are the Uganda Law Oracle. Transcribe the following audio precisely. The user's interface is currently set to ${language === 'en' ? 'English' : 'Luganda'}, so they are likely speaking that language, but they may also mix both. Recognize legal terms and names common in Uganda. Return the transcription in the original language spoken. If no speech is detected, return '[No speech detected]'.` }
               ] 
             },
             config: {
@@ -699,8 +700,9 @@ export default function App() {
   const speakText = async (text: string, messageId: string) => {
     if (isSpeaking === messageId) { stopSpeaking(); return; }
     
-    // 1. Check if user is logged in
-    if (!user) {
+    // 1. Check if user is logged in or has free questions
+    const currentUser = user || auth.currentUser;
+    if (!currentUser && freeQuestionsRemaining <= 0) {
       setShowAuthModal(true);
       setVoiceError(language === 'en' ? "Please sign in to use voice features." : "Yingira okusobola okukozesa eddoboozi.");
       return;
