@@ -45,11 +45,10 @@ import {
   Clock,
   AlertTriangle,
   ArrowUpRight,
-  CheckCircle
+  CheckCircle,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -1916,6 +1915,16 @@ export default function App() {
                           <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
                           <span className="hidden xs:inline">{language === 'en' ? 'Document' : 'Ekiwandiiko'}</span>
                           <span className="xs:hidden">DOC</span>
+                        </button>
+                        <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
+                        <button 
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2.5 bg-[#C5A059] text-[#0B0F1A] rounded-lg sm:rounded-xl text-[9px] sm:text-[11px] font-bold uppercase tracking-widest hover:bg-[#8B6E37] transition-all shadow-lg shadow-[#C5A059]/20"
+                          title={language === 'en' ? "Scan or attach documents" : "Kebera oba gattako fayiro"}
+                        >
+                          <Camera size={14} className="sm:w-4 sm:h-4" />
+                          <span>{language === 'en' ? 'Scan' : 'Kebera'}</span>
                         </button>
                         <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
                         <button 
