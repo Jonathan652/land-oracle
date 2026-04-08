@@ -1390,7 +1390,11 @@ export default function App() {
               <p className="text-[10px] text-[#C5A059] font-bold uppercase tracking-[0.2em]">Legal Information System</p>
             </div>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-white/5 rounded-lg transition-colors">
+          <button 
+            onClick={() => setIsSidebarOpen(false)} 
+            className="lg:hidden p-2 hover:bg-white/5 rounded-lg transition-colors"
+            aria-label={language === 'en' ? "Close Sidebar" : "Ggalawo Olubiri"}
+          >
             <X size={20} />
           </button>
         </div>
@@ -1486,14 +1490,24 @@ export default function App() {
             <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-[#C5A059] flex items-center justify-center text-[#0B0F1A] font-bold shrink-0 overflow-hidden">
-                  {user.photoURL ? <img src={user.photoURL} alt="" /> : user.displayName?.[0] || user.email?.[0]}
+                  {user.photoURL ? (
+                    <img 
+                      src={user.photoURL} 
+                      alt={user.displayName || user.email || "User Profile"} 
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : user.displayName?.[0] || user.email?.[0]}
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-white truncate">{user.displayName || user.email.split('@')[0]}</p>
                   <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
                 </div>
               </div>
-              <button onClick={() => logout()} className="p-2 hover:text-red-400 transition-colors">
+              <button 
+                onClick={() => logout()} 
+                className="p-2 hover:text-red-400 transition-colors"
+                aria-label={language === 'en' ? "Logout" : "Ffuluma"}
+              >
                 <X size={16} />
               </button>
             </div>
@@ -1551,12 +1565,16 @@ export default function App() {
                 "p-1.5 sm:p-2 rounded-lg transition-all",
                 autoTalkBack ? "text-[#C5A059] bg-[#C5A059]/5" : "text-slate-400 hover:bg-slate-50"
               )}
+              aria-label={language === 'en' ? (autoTalkBack ? "Disable Voice" : "Enable Voice") : (autoTalkBack ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
+              title={language === 'en' ? (autoTalkBack ? "Disable Voice" : "Enable Voice") : (autoTalkBack ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
             >
               {autoTalkBack ? <Volume2 size={18} className="sm:w-5 sm:h-5" /> : <VolumeX size={18} className="sm:w-5 sm:h-5" />}
             </button>
             <button 
               onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
               className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-[9px] sm:text-[10px] font-bold text-slate-600 transition-all uppercase tracking-[0.1em] border border-slate-200"
+              aria-label={language === 'en' ? "Switch to Luganda" : "Kyusa okudda mu Lungereza"}
+              title={language === 'en' ? "Switch to Luganda" : "Kyusa okudda mu Lungereza"}
             >
               {language === 'en' ? 'EN' : 'LG'}
             </button>
@@ -1841,7 +1859,8 @@ export default function App() {
                             <button 
                               type="button"
                               onClick={() => removeFile(i)}
-                              className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                              className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                              aria-label={language === 'en' ? `Remove ${file.name}` : `Ggyamu ${file.name}`}
                             >
                               <X size={14} />
                             </button>
@@ -1867,6 +1886,7 @@ export default function App() {
                         }
                       }}
                       placeholder={language === 'en' ? "Enter legal inquiry..." : "Wandiika ekibuuzo kyo..."}
+                      aria-label={language === 'en' ? "Legal inquiry input" : "Wandiika ekibuuzo kyo"}
                       className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
                       rows={1}
                     />
@@ -1879,6 +1899,7 @@ export default function App() {
                             "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-bold uppercase tracking-widest transition-all",
                             isDocumentMode ? "bg-[#C5A059] text-[#0B0F1A] shadow-lg shadow-[#C5A059]/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
                           )}
+                          aria-label={language === 'en' ? (isDocumentMode ? "Disable Document Mode" : "Enable Document Mode") : (isDocumentMode ? "Ggyako Ekiwandiiko" : "Koleeza Ekiwandiiko")}
                         >
                           <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
                           <span className="hidden xs:inline">{language === 'en' ? 'Document' : 'Ekiwandiiko'}</span>
@@ -1908,6 +1929,8 @@ export default function App() {
                             "p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-all",
                             "text-slate-400 hover:bg-slate-200"
                           )}
+                          aria-label={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : (isRecording ? "Yimiriza" : "Koleeza Eddoboozi")}
+                          title={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : (isRecording ? "Yimiriza" : "Koleeza Eddoboozi")}
                         >
                           <Mic size={16} className="sm:w-5 sm:h-5" />
                         </button>
@@ -1916,6 +1939,7 @@ export default function App() {
                         type="submit"
                         disabled={!input.trim() || isLoading}
                         className="p-2 sm:p-3.5 bg-[#0B0F1A] text-[#C5A059] rounded-lg sm:rounded-2xl hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-black/10 active:scale-95"
+                        aria-label={language === 'en' ? "Send Inquiry" : "Sindiika"}
                       >
                         {isLoading ? <Loader2 size={18} className="animate-spin sm:w-6 sm:h-6" /> : <Send size={18} className="sm:w-6 sm:h-6" />}
                       </button>

@@ -11,7 +11,12 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0B0F1A]/90 backdrop-blur-md">
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#0B0F1A]/90 backdrop-blur-md"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="legal-notice-title"
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -23,7 +28,7 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
                 <ShieldCheck className="w-6 h-6 sm:w-8 sm:h-8" />
               </div>
               <div>
-                <h2 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">Professional Legal Notice</h2>
+                <h2 id="legal-notice-title" className="text-2xl sm:text-3xl font-display font-bold tracking-tight">Professional Legal Notice</h2>
                 <p className="text-[#C5A059] text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] mt-1">Uganda Law Oracle</p>
               </div>
             </div>
