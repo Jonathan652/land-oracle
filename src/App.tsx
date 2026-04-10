@@ -62,7 +62,7 @@ const LegalNoticeModal = React.lazy(() => import('./components/LegalNoticeModal'
 const MarkdownRenderer = React.lazy(() => import('./components/MarkdownRenderer'));
 
 // --- Components ---
-const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: 'en' | 'lg' }) => (
+const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: 'en' | 'lg' | 'nk' }) => (
   <div className="my-6 sm:my-8 bg-slate-50 border border-slate-200 rounded-2xl sm:rounded-[2.5rem] overflow-hidden shadow-sm">
     <div className="p-5 sm:p-8 border-b border-slate-200 bg-white">
       <div className="flex items-center gap-3 mb-2">
@@ -72,7 +72,7 @@ const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: '
         <h3 className="font-display font-bold text-lg sm:text-xl text-[#0B0F1A]">{roadmap.title}</h3>
       </div>
       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-        {language === 'en' ? 'Interactive Legal Roadmap' : 'Enkola y\'amateeka ey\'omulala'}
+        {language === 'en' ? 'Interactive Legal Roadmap' : language === 'lg' ? 'Enkola y\'amateeka ey\'omulala' : 'Enshonga z\'amateeka ezirikukuratanisa'}
       </p>
     </div>
     <div className="p-5 sm:p-8 space-y-8 relative">
@@ -164,7 +164,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [language, setLanguage] = useState<'en' | 'lg'>('en');
+  const [language, setLanguage] = useState<'en' | 'lg' | 'nk'>('en');
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const [isAudioLoading, setIsAudioLoading] = useState<string | null>(null);
   const [audioCache, setAudioCache] = useState<Record<string, AudioBuffer>>({});
@@ -655,7 +655,7 @@ export default function App() {
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: `You are the Uganda Law Oracle. Transcribe the following audio precisely. The user's interface is currently set to ${language === 'en' ? 'English' : 'Luganda'}, so they are likely speaking that language, but they may also mix both. Recognize legal terms and names common in Uganda. Return the transcription in the original language spoken. If no speech is detected, return '[No speech detected]'.` }
+                { text: `You are the Uganda Law Oracle. Transcribe the following audio precisely. The user's interface is currently set to ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}, so they are likely speaking that language, but they may also mix both. Recognize legal terms and names common in Uganda. Return the transcription in the original language spoken. If no speech is detected, return '[No speech detected]'.` }
               ] 
             },
             config: {
@@ -679,7 +679,7 @@ export default function App() {
 
       if (!transcriptionResponse) throw new Error("Transcription failed");
 
-      const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : "[Okukyusa kulemye]");
+      const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : language === 'lg' ? "[Okukyusa kulemye]" : "[Okuhandiika kuremwa]");
       
       // 5. Update user message with transcribed text
       updateSessionMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, content: transcribedText } : m));
@@ -1188,7 +1188,7 @@ export default function App() {
     try {
       const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
       const ai = getAI();
-      addVerificationStep(language === 'en' ? "Analyzing legal intent..." : "Okukebera ekigendererwa...");
+      addVerificationStep(language === 'en' ? "Analyzing legal intent..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
       
       const assistantMessageId = generateId();
       const assistantMessage: Message = {
@@ -1212,10 +1212,10 @@ export default function App() {
         tools: [{ functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }]
       };
 
-      addVerificationStep(language === 'en' ? "Scanning Constitution & Statutes..." : "Okukebera ensengeka y'eggwanga n'amateeka...");
+      addVerificationStep(language === 'en' ? "Scanning Constitution & Statutes..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
       await new Promise(r => setTimeout(r, 800));
       
-      addVerificationStep(language === 'en' ? "Verifying statutory references..." : "Okukakasa ebiwandiiko by'amateeka...");
+      addVerificationStep(language === 'en' ? "Verifying statutory references..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
       await new Promise(r => setTimeout(r, 600));
 
       if (isStreamingMode) {
@@ -1240,7 +1240,7 @@ export default function App() {
         let fullText = "";
         let hasToolCall = false;
 
-        addVerificationStep(language === 'en' ? "Finalizing professional response..." : "Okumaliriza okuddamu...");
+        addVerificationStep(language === 'en' ? "Finalizing professional response..." : language === 'lg' ? "Okumaliriza okuddamu..." : "Okumaliriza okugarukamu...");
 
         for await (const chunk of stream) {
           if (chunk.functionCalls) {
@@ -1356,10 +1356,26 @@ export default function App() {
   };
 
   const quickQuestions = [
-    { en: "What are the fundamental rights in the Constitution?", lg: "Biki eby'obuntu ebiri mu nsonga z'eggwanga?" },
-    { en: "Explain the process of filing a civil suit in Uganda", lg: "Nnyonnyola enkola y'okuwaaba omusango mu Uganda" },
-    { en: "What are the requirements for a valid contract?", lg: "Biki ebyetaagisa endagaano okuba entuufu?" },
-    { en: "Draft a formal demand letter for breach of contract", lg: "Kola ebbaluwa ey'okusaba obusasuzi olw'okumenya endagaano" },
+    { 
+      en: "What are the fundamental rights in the Constitution?", 
+      lg: "Biki eby'obuntu ebiri mu nsonga z'eggwanga?",
+      nk: "Ebihagaro by'obuntu ebiri omu nshonga z'eihanga n'ebiha?"
+    },
+    { 
+      en: "Explain the process of filing a civil suit in Uganda", 
+      lg: "Nnyonnyola enkola y'okuwaaba omusango mu Uganda",
+      nk: "Shoboorora oku omuntu arikubaasa kutaho omushango gw'abantu omu Uganda"
+    },
+    { 
+      en: "What are the requirements for a valid contract?", 
+      lg: "Biki ebyetaagisa endagaano okuba entuufu?",
+      nk: "Ebyetaago by'endagaano eihikire n'ebiha?"
+    },
+    { 
+      en: "Draft a formal demand letter for breach of contract", 
+      lg: "Kola ebbaluwa ey'okusaba obusasuzi olw'okumenya endagaano",
+      nk: "Handiika ebaruha y'okushaba obuhasirizi ahabw'okutsigara aha ndagaano"
+    },
   ];
 
   return (
@@ -1404,7 +1420,7 @@ export default function App() {
           <button 
             onClick={() => setIsSidebarOpen(false)} 
             className="lg:hidden p-2 hover:bg-white/5 rounded-lg transition-colors"
-            aria-label={language === 'en' ? "Close Sidebar" : "Ggalawo Olubiri"}
+            aria-label={language === 'en' ? "Close Sidebar" : language === 'lg' ? "Ggalawo Olubiri" : "Yingira omu mulyango"}
           >
             <X size={20} />
           </button>
@@ -1415,7 +1431,7 @@ export default function App() {
             onClick={() => {
               const newSession: ChatSession = {
                 id: generateId(),
-                title: language === 'en' ? 'New Inquiry' : 'Okubuuza Okupya',
+                title: language === 'en' ? 'New Inquiry' : language === 'lg' ? 'Okubuuza Okupya' : 'Okushaba Okusya',
                 messages: [],
                 lastUpdated: new Date(),
                 category: 'General'
@@ -1426,7 +1442,7 @@ export default function App() {
             className="w-full py-3.5 px-4 bg-[#C5A059] hover:bg-[#B38F48] text-[#0B0F1A] rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#C5A059]/5 transition-all active:scale-[0.98]"
           >
             <MessageSquare size={18} />
-            {language === 'en' ? 'New Legal Inquiry' : 'Okubuuza Okupya'}
+            {language === 'en' ? 'New Legal Inquiry' : language === 'lg' ? 'Okubuuza Okupya' : 'Okushaba Okusya'}
           </button>
 
           <div className="space-y-1 mb-6">
@@ -1483,9 +1499,9 @@ export default function App() {
           {!isPro && (
             <div className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-3">
               <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest">
-                <span className="text-slate-500">{language === 'en' ? 'Voice Messages' : 'Obubaka bw\'eddoboozi'}</span>
+                <span className="text-slate-500">{language === 'en' ? 'Voice Messages' : language === 'lg' ? 'Obubaka bw\'eddoboozi' : 'Obubaka bw\'eddoboozi'}</span>
                 <span className={cn(voiceMessagesRemaining <= 1 ? "text-red-400" : "text-[#C5A059]")}>
-                  {voiceMessagesRemaining} {language === 'en' ? 'Left' : 'Ebisigadde'}
+                  {voiceMessagesRemaining} {language === 'en' ? 'Left' : language === 'lg' ? 'Ebisigadde' : 'Ebisigadde'}
                 </span>
               </div>
               <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -1528,7 +1544,7 @@ export default function App() {
               className="w-full py-3 px-4 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold flex items-center justify-center gap-2 border border-white/5 transition-all"
             >
               <User size={18} />
-              {language === 'en' ? 'Sign In for Pro' : 'Yingira'}
+              {language === 'en' ? 'Sign In for Pro' : language === 'lg' ? 'Yingira' : 'Yingira'}
             </button>
           )}
         </div>
@@ -1555,7 +1571,7 @@ export default function App() {
                   activeTab === 'chat' ? "bg-[#C5A059]/10 text-[#8B6E37]" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
-                {language === 'en' ? 'Legal Inquiry' : 'Okubuuza'}
+                {language === 'en' ? 'Legal Inquiry' : language === 'lg' ? 'Okubuuza' : 'Okushaba'}
               </button>
               <button 
                 onClick={() => setActiveTab('lawyers')}
@@ -1564,7 +1580,7 @@ export default function App() {
                   activeTab === 'lawyers' ? "bg-[#C5A059]/10 text-[#8B6E37]" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
-                {language === 'en' ? 'Find Advocate' : 'Noonya Puliida'}
+                {language === 'en' ? 'Find Advocate' : language === 'lg' ? 'Noonya Puliida' : 'Sherura Puliida'}
               </button>
             </div>
           </div>
@@ -1582,12 +1598,12 @@ export default function App() {
               {autoTalkBack ? <Volume2 size={18} className="sm:w-5 sm:h-5" /> : <VolumeX size={18} className="sm:w-5 sm:h-5" />}
             </button>
             <button 
-              onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
+              onClick={() => setLanguage(l => l === 'en' ? 'lg' : l === 'lg' ? 'nk' : 'en')}
               className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-[9px] sm:text-[10px] font-bold text-slate-600 transition-all uppercase tracking-[0.1em] border border-slate-200"
-              aria-label={language === 'en' ? "Switch to Luganda" : "Kyusa okudda mu Lungereza"}
-              title={language === 'en' ? "Switch to Luganda" : "Kyusa okudda mu Lungereza"}
+              aria-label={language === 'en' ? "Switch to Luganda" : language === 'lg' ? "Kyusa okudda mu Runyankore" : "Kyusa okudda mu Lungereza"}
+              title={language === 'en' ? "Switch to Luganda" : language === 'lg' ? "Kyusa okudda mu Runyankore" : "Kyusa okudda mu Lungereza"}
             >
-              {language === 'en' ? 'EN' : 'LG'}
+              {language === 'en' ? 'EN' : language === 'lg' ? 'LG' : 'NK'}
             </button>
           </div>
         </header>
@@ -1619,12 +1635,14 @@ export default function App() {
                         <Scale size={32} className="sm:w-12 sm:h-12" />
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-display font-bold text-[#0B0F1A] tracking-tight leading-tight">
-                        {language === 'en' ? 'Uganda Law Oracle' : 'Amateeka ga Uganda'}
+                        {language === 'en' ? 'Uganda Law Oracle' : language === 'lg' ? 'Amateeka ga Uganda' : 'Amateeka ga Uganda'}
                       </h2>
                       <p className="text-base sm:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed px-4">
                         {language === 'en' 
                           ? 'Professional statutory guidance, document verification, and legal compliance analysis for the Ugandan jurisdiction.' 
-                          : 'Okukulembera mu mateeka, okukakasa ebiwandiiko, n\'okukebera obutuufu bw\'amateeka mu Uganda.'}
+                          : language === 'lg'
+                          ? 'Okukulembera mu mateeka, okukakasa ebiwandiiko, n\'okukebera obutuufu bw\'amateeka mu Uganda.'
+                          : 'Obuhabuzi bw\'amateeka, okukakasa ebihandiiko, n\'okushwijuma amateeka omu Uganda.'}
                       </p>
                     </motion.div>
 
@@ -1645,9 +1663,11 @@ export default function App() {
                             {i === 3 && <FileText size={20} className="sm:w-6 sm:h-6" />}
                           </div>
                           <div>
-                            <p className="font-display font-bold text-base sm:text-lg text-[#0B0F1A] leading-snug group-hover:text-[#8B6E37] transition-colors mb-1 sm:mb-2">{language === 'en' ? q.en : q.lg}</p>
+                            <p className="font-display font-bold text-base sm:text-lg text-[#0B0F1A] leading-snug group-hover:text-[#8B6E37] transition-colors mb-1 sm:mb-2">
+                              {language === 'en' ? q.en : language === 'lg' ? q.lg : q.nk}
+                            </p>
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                              {language === 'en' ? 'Start inquiry' : 'Tandika okubuuza'} <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
+                              {language === 'en' ? 'Start inquiry' : language === 'lg' ? 'Tandika okubuuza' : 'Tandika okushaba'} <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
                             </p>
                           </div>
                         </motion.button>
@@ -1728,8 +1748,8 @@ export default function App() {
             ) : activeTab === 'lawyers' ? (
               <div className="py-12 space-y-12">
                 <div className="text-center space-y-4">
-                  <h2 className="text-2xl sm:text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">{language === 'en' ? 'Verified Legal Advocates' : 'Bapuliida Abakakasiddwa'}</h2>
-                  <p className="text-slate-500 text-sm sm:text-lg max-w-xl mx-auto">{language === 'en' ? 'Consult with registered legal professionals for representation and specialized guidance.' : 'Webuuze ku bakugu b\'amateeka abakakasiddwa.'}</p>
+                  <h2 className="text-2xl sm:text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">{language === 'en' ? 'Verified Legal Advocates' : language === 'lg' ? 'Bapuliida Abakakasiddwa' : 'Bapuliida Abakakasiddwa'}</h2>
+                  <p className="text-slate-500 text-sm sm:text-lg max-w-xl mx-auto">{language === 'en' ? 'Consult with registered legal professionals for representation and specialized guidance.' : language === 'lg' ? 'Webuuze ku bakugu b\'amateeka abakakasiddwa.' : 'Webuuze aha bakugu b\'amateeka abakakasiddwa.'}</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {MOCK_LAWYERS.map(lawyer => (
@@ -1896,8 +1916,8 @@ export default function App() {
                           handleSend();
                         }
                       }}
-                      placeholder={language === 'en' ? "Enter legal inquiry..." : "Wandiika ekibuuzo kyo..."}
-                      aria-label={language === 'en' ? "Legal inquiry input" : "Wandiika ekibuuzo kyo"}
+                      placeholder={language === 'en' ? "Enter legal inquiry..." : language === 'lg' ? "Wandiika ekibuuzo kyo..." : "Handiika okushaba kwawe..."}
+                      aria-label={language === 'en' ? "Legal inquiry input" : language === 'lg' ? "Wandiika ekibuuzo kyo" : "Handiika okushaba kwawe"}
                       className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
                       rows={1}
                     />
@@ -1910,10 +1930,10 @@ export default function App() {
                             "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-bold uppercase tracking-widest transition-all",
                             isDocumentMode ? "bg-[#C5A059] text-[#0B0F1A] shadow-lg shadow-[#C5A059]/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
                           )}
-                          aria-label={language === 'en' ? (isDocumentMode ? "Disable Document Mode" : "Enable Document Mode") : (isDocumentMode ? "Ggyako Ekiwandiiko" : "Koleeza Ekiwandiiko")}
+                          aria-label={language === 'en' ? (isDocumentMode ? "Disable Document Mode" : "Enable Document Mode") : language === 'lg' ? (isDocumentMode ? "Ggyako Ekiwandiiko" : "Koleeza Ekiwandiiko") : (isDocumentMode ? "Ihaaho Ebihandiiko" : "Taho Ebihandiiko")}
                         >
                           <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
-                          <span className="hidden xs:inline">{language === 'en' ? 'Document' : 'Ekiwandiiko'}</span>
+                          <span className="hidden xs:inline">{language === 'en' ? 'Document' : language === 'lg' ? 'Ekiwandiiko' : 'Ebihandiiko'}</span>
                           <span className="xs:hidden">DOC</span>
                         </button>
                         <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
@@ -1921,17 +1941,17 @@ export default function App() {
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
                           className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2.5 bg-[#C5A059] text-[#0B0F1A] rounded-lg sm:rounded-xl text-[9px] sm:text-[11px] font-bold uppercase tracking-widest hover:bg-[#8B6E37] transition-all shadow-lg shadow-[#C5A059]/20"
-                          title={language === 'en' ? "Scan or attach documents" : "Kebera oba gattako fayiro"}
+                          title={language === 'en' ? "Scan or attach documents" : language === 'lg' ? "Kebera oba gattako fayiro" : "Shwijuma oba gattaho ebihandiiko"}
                         >
                           <Camera size={14} className="sm:w-4 sm:h-4" />
-                          <span>{language === 'en' ? 'Scan' : 'Kebera'}</span>
+                          <span>{language === 'en' ? 'Scan' : language === 'lg' ? 'Kebera' : 'Shwijuma'}</span>
                         </button>
                         <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
                         <button 
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
                           className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-slate-500 hover:bg-slate-200 transition-all"
-                          title={language === 'en' ? "Attach files" : "Gattako fayiro"}
+                          title={language === 'en' ? "Attach files" : language === 'lg' ? "Gattako fayiro" : "Gattaho ebihandiiko"}
                         >
                           <Paperclip size={16} className="sm:w-5 sm:h-5" />
                         </button>
@@ -1950,8 +1970,8 @@ export default function App() {
                             "p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-all",
                             "text-slate-500 hover:bg-slate-200"
                           )}
-                          aria-label={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : (isRecording ? "Yimiriza" : "Koleeza Eddoboozi")}
-                          title={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : (isRecording ? "Yimiriza" : "Koleeza Eddoboozi")}
+                          aria-label={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : language === 'lg' ? (isRecording ? "Yimiriza" : "Koleeza Eddoboozi") : (isRecording ? "Yimiriza" : "Tandika Okukwata Eddoboozi")}
+                          title={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : language === 'lg' ? (isRecording ? "Yimiriza" : "Koleeza Eddoboozi") : (isRecording ? "Yimiriza" : "Tandika Okukwata Eddoboozi")}
                         >
                           <Mic size={16} className="sm:w-5 sm:h-5" />
                         </button>
@@ -1960,7 +1980,7 @@ export default function App() {
                         type="submit"
                         disabled={!input.trim() || isLoading}
                         className="p-2 sm:p-3.5 bg-[#0B0F1A] text-[#C5A059] rounded-lg sm:rounded-2xl hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-black/10 active:scale-95"
-                        aria-label={language === 'en' ? "Send Inquiry" : "Sindiika"}
+                        aria-label={language === 'en' ? "Send Inquiry" : language === 'lg' ? "Sindiika" : "Tweereze"}
                       >
                         {isLoading ? <Loader2 size={18} className="animate-spin sm:w-6 sm:h-6" /> : <Send size={18} className="sm:w-6 sm:h-6" />}
                       </button>
