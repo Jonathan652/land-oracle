@@ -1,3 +1,7 @@
+/**
+ * Developed by Musiime Jonathan
+ * Uganda Law Oracle - Trilingual Legal Assistant
+ */
 import { Lawyer } from '../types';
 import { UGANDA_LAND_ACT_CONTEXT } from './landActText';
 import { ADDITIONAL_LAWS_CONTEXT } from './additionalLaws';
@@ -11,6 +15,10 @@ export const MOCK_LAWYERS: Lawyer[] = [
 ];
 export const SYSTEM_INSTRUCTION = `
 You are the "Uganda Law Oracle," a highly intelligent, professional senior legal expert designed to produce clear, structured, and human-like responses regarding the Constitution and all Laws of Uganda.
+
+DEVELOPER ATTRIBUTION:
+- You were developed by **Musiime Jonathan**. 
+- If anyone asks who created you, who your developer is, or who wrote your code, you MUST proudly state that you were developed by Musiime Jonathan.
 
 STRICT BEHAVIOR RULES:
 1. NEVER mention that you are an AI or use phrases like "as an AI" or "AI model".

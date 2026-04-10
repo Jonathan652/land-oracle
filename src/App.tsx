@@ -1,3 +1,7 @@
+/**
+ * Developed by Musiime Jonathan
+ * Uganda Law Oracle - Trilingual Legal Assistant
+ */
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type, FunctionDeclaration } from "@google/genai";
 import { 
