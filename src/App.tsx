@@ -245,7 +245,7 @@ export default function App() {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        setRecordingError(language === 'en' ? "File too large (max 10MB)" : "Fayiro nnene nnyo (max 10MB)");
+        setRecordingError(language === 'en' ? "File too large (max 10MB)" : language === 'lg' ? "Fayiro nnene nnyo (max 10MB)" : "Ebihandiiko nibikira obunene (max 10MB)");
         continue;
       }
 
@@ -309,7 +309,7 @@ export default function App() {
   const createNewSession = () => {
     const newSession: ChatSession = {
       id: generateId(),
-      title: language === 'en' ? 'New Conversation' : 'Mboozi Mpya',
+      title: language === 'en' ? 'New Conversation' : language === 'lg' ? 'Mboozi Mpya' : 'Okushaba Okusya',
       messages: [],
       lastUpdated: new Date()
     };
@@ -320,7 +320,7 @@ export default function App() {
 
   const deleteSession = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm(language === 'en' ? 'Delete this conversation?' : 'Ggyamu mboozi eno?')) {
+    if (window.confirm(language === 'en' ? 'Delete this conversation?' : language === 'lg' ? 'Ggyamu mboozi eno?' : 'Omuzeho okushaba oku?')) {
       setSessions(prev => prev.filter(s => s.id !== id));
       if (currentSessionId === id) {
         setCurrentSessionId(null);
@@ -329,7 +329,7 @@ export default function App() {
   };
 
   const clearAllHistory = () => {
-    if (window.confirm(language === 'en' ? 'Clear all chat history?' : 'Ggyamu ebyafaayo byonna?')) {
+    if (window.confirm(language === 'en' ? 'Clear all chat history?' : language === 'lg' ? 'Ggyamu ebyafaayo byonna?' : 'Omuzeho ebyafaayo byonna?')) {
       setSessions([]);
       setCurrentSessionId(null);
       localStorage.removeItem('uganda_law_oracle_sessions');
@@ -400,7 +400,7 @@ export default function App() {
     }
     
     if (!navigator.mediaDevices || !window.MediaRecorder) {
-      setRecordingError(language === 'en' ? "Recording not supported in this browser." : "Okukwata eddoboozi tekuwagirwa mu browser eno.");
+      setRecordingError(language === 'en' ? "Recording not supported in this browser." : language === 'lg' ? "Okukwata eddoboozi tekuwagirwa mu browser eno." : "Okukwata eddoboozi tikurikuhagira browser egi.");
       return;
     }
 
@@ -458,7 +458,7 @@ export default function App() {
 
       mediaRecorder.onerror = (event: any) => {
         console.error("MediaRecorder Error:", event.error);
-        setRecordingError(language === 'en' ? "Recording error occurred." : "Wabaddewo ekikyamu mu kukwata eddoboozi.");
+        setRecordingError(language === 'en' ? "Recording error occurred." : language === 'lg' ? "Wabaddewo ekikyamu mu kukwata eddoboozi." : "Wabaho ekikyamu omu kukwata eddoboozi.");
         stopRecording();
       };
 
@@ -473,7 +473,7 @@ export default function App() {
         
         if (audioChunksRef.current.length === 0) {
           console.warn("No audio data captured.");
-          setRecordingError(language === 'en' ? "No audio data captured. Please try again." : "Tewali ddoboozi likwatiddwa. Gezaako nate.");
+          setRecordingError(language === 'en' ? "No audio data captured. Please try again." : language === 'lg' ? "Tewali ddoboozi likwatiddwa. Gezaako nate." : "Tihali ddoboozi erikwatirwe. Gezaako nate.");
           setIsRecording(false);
           return;
         }
@@ -484,7 +484,7 @@ export default function App() {
 
         // If size is too small, it's likely silence or a hardware glitch
         if (audioBlob.size < 4000) { // Increased threshold to 4KB (approx 1-2s of audio)
-          setRecordingError(language === 'en' ? `Audio too short or silent (${sizeKB}KB). Please speak longer.` : `Eddoboozi liyimpitidde nnyo oba tewali ddoboozi (${sizeKB}KB). Gezaako nate.`);
+          setRecordingError(language === 'en' ? `Audio too short or silent (${sizeKB}KB). Please speak longer.` : language === 'lg' ? `Eddoboozi liyimpitidde nnyo oba tewali ddoboozi (${sizeKB}KB). Gezaako nate.` : `Eddoboozi nirigaba lifwiire nnyo oba tihali ddoboozi (${sizeKB}KB). Gezaako nate.`);
           setIsRecording(false);
           return;
         }
@@ -636,7 +636,7 @@ export default function App() {
       const userMessage: Message = {
         id: userMessageId,
         role: 'user',
-        content: language === 'en' ? "Transcribing voice note..." : "Nkyusa eddoboozi mu biwandiiko...",
+        content: language === 'en' ? "Transcribing voice note..." : language === 'lg' ? "Nkyusa eddoboozi mu biwandiiko..." : "Nkuhandiika ebigambo eby'eddoboozi...",
         timestamp: new Date(),
       };
       
@@ -659,7 +659,12 @@ export default function App() {
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: `You are the Uganda Law Oracle. Transcribe the following audio precisely. The user's interface is currently set to ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}, so they are likely speaking that language, but they may also mix both. Recognize legal terms and names common in Uganda. Return the transcription in the original language spoken. If no speech is detected, return '[No speech detected]'.` }
+                { text: `You are the Uganda Law Oracle. Transcribe the following audio precisely. 
+The user's interface is currently set to ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}.
+IMPORTANT: If the user is speaking Runyankore (a language from Western Uganda), transcribe it accurately in Runyankore. Do NOT confuse it with Luganda. Runyankore has distinct phonetics and vocabulary (e.g., uses 'r' more frequently where Luganda uses 'l').
+Recognize legal terms and names common in Uganda (e.g., 'Amateeka', 'Omushango', 'Endagaano', 'Puliida', 'Eihanga', 'Obuhasirizi').
+Return the transcription in the original language spoken. 
+If no speech is detected, return '[No speech detected]'.` }
               ] 
             },
             config: {
@@ -811,13 +816,13 @@ export default function App() {
     const currentUser = user || auth.currentUser;
     if (!currentUser && freeQuestionsRemaining <= 0) {
       setShowAuthModal(true);
-      setVoiceError(language === 'en' ? "Please sign in to use voice features." : "Yingira okusobola okukozesa eddoboozi.");
+      setVoiceError(language === 'en' ? "Please sign in to use voice features." : language === 'lg' ? "Yingira okusobola okukozesa eddoboozi." : "Yingira okusobola okukozesa eddoboozi.");
       return;
     }
 
     // 2. Check voice quota
     if (!isPro && voiceMessagesRemaining <= 0) {
-      setVoiceError(language === 'en' ? "Voice limit reached. Upgrade to Pro for unlimited voice." : "Eddoboozi liweddeko. Gula Pro okusobola okukozesa eddoboozi mu ngeri etaliiko kkomo.");
+      setVoiceError(language === 'en' ? "Voice limit reached. Upgrade to Pro for unlimited voice." : language === 'lg' ? "Eddoboozi liweddeko. Gula Pro okusobola okukozesa eddoboozi mu ngeri etaliiko kkomo." : "Eddoboozi rihwireho. Gura Pro okusobola okukozesa eddoboozi n'obusingye.");
       return;
     }
 
@@ -1485,7 +1490,7 @@ export default function App() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (window.confirm(language === 'en' ? 'Delete this conversation?' : 'Ggyamu mboozi eno?')) {
+                    if (window.confirm(language === 'en' ? 'Delete this conversation?' : language === 'lg' ? 'Ggyamu mboozi eno?' : 'Omuzeho okushaba oku?')) {
                       setSessions(prev => prev.filter(s => s.id !== session.id));
                       if (currentSessionId === session.id) setCurrentSessionId(null);
                     }
@@ -1537,7 +1542,7 @@ export default function App() {
               <button 
                 onClick={() => logout()} 
                 className="p-2 hover:text-red-400 transition-colors"
-                aria-label={language === 'en' ? "Logout" : "Ffuluma"}
+                aria-label={language === 'en' ? "Logout" : language === 'lg' ? "Ffuluma" : "Ffuluma"}
               >
                 <X size={16} />
               </button>
@@ -1657,7 +1662,7 @@ export default function App() {
                           initial={{ opacity: 0, scale: 0.98 }} 
                           animate={{ opacity: 1, scale: 1 }} 
                           transition={{ delay: i * 0.1 }} 
-                          onClick={() => handleSend(language === 'en' ? q.en : q.lg)} 
+                          onClick={() => handleSend(language === 'en' ? q.en : language === 'lg' ? q.lg : q.nk)} 
                           className="p-5 sm:p-8 text-left bg-white border border-slate-100 rounded-2xl sm:rounded-[2rem] hover:border-[#C5A059]/30 hover:shadow-2xl hover:shadow-[#C5A059]/10 transition-all group flex items-start gap-4 sm:gap-6"
                         >
                           <div className="p-3 sm:p-4 bg-slate-50 rounded-xl sm:rounded-2xl text-slate-500 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all shrink-0 shadow-sm">
@@ -1738,7 +1743,7 @@ export default function App() {
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-green-500/20 transition-all"
                               >
                                 <Share2 size={12} />
-                                {language === 'en' ? 'Share to WhatsApp' : 'Gaba ku WhatsApp'}
+                                {language === 'en' ? 'Share to WhatsApp' : language === 'lg' ? 'Gaba ku WhatsApp' : 'Gaba omu WhatsApp'}
                               </button>
                             </div>
                           </div>
@@ -1846,7 +1851,7 @@ export default function App() {
                         type="button"
                         onClick={cancelRecording}
                         className="p-3 bg-slate-200 text-slate-600 rounded-full hover:bg-slate-300 transition-all active:scale-95"
-                        title={language === 'en' ? "Cancel" : "Sazaamu"}
+                        title={language === 'en' ? "Cancel" : language === 'lg' ? "Sazaamu" : "Sazaamu"}
                       >
                         <X size={20} />
                       </button>
@@ -1854,7 +1859,7 @@ export default function App() {
                         type="button"
                         onClick={stopRecording}
                         className="p-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 active:scale-95"
-                        title={language === 'en' ? "Stop & Send" : "Yimiriza omuweereze"}
+                        title={language === 'en' ? "Stop & Send" : language === 'lg' ? "Yimiriza omuweereze" : "Yimiriza otweereze"}
                       >
                         <Square size={20} fill="currentColor" />
                       </button>
@@ -1865,7 +1870,7 @@ export default function App() {
                     <div className="flex items-center gap-3 text-[#C5A059]">
                       <Loader2 size={24} className="animate-spin" />
                       <span className="font-bold uppercase tracking-widest text-xs">
-                        {language === 'en' ? 'Transcribing...' : 'Nkyusa eddoboozi...'}
+                        {language === 'en' ? 'Transcribing...' : language === 'lg' ? 'Nkyusa eddoboozi...' : 'Nkuhandiika ebigambo...'}
                       </span>
                     </div>
                     <button 
@@ -1895,7 +1900,7 @@ export default function App() {
                               type="button"
                               onClick={() => removeFile(i)}
                               className="p-2 text-slate-500 hover:text-red-500 transition-colors"
-                              aria-label={language === 'en' ? `Remove ${file.name}` : `Ggyamu ${file.name}`}
+                              aria-label={language === 'en' ? `Remove ${file.name}` : language === 'lg' ? `Ggyamu ${file.name}` : `Ihaaho ${file.name}`}
                             >
                               <X size={14} />
                             </button>
@@ -1903,11 +1908,11 @@ export default function App() {
                         ))}
                         <button 
                           type="button"
-                          onClick={() => handleSend(language === 'en' ? "Analyze these documents for statutory compliance and legal risks in Uganda." : "Kebera ebiwandiiko bino olabe oba bituukana n'amateeka ga Uganda era olabe obuzibu obuyinza okubirimu.")}
+                          onClick={() => handleSend(language === 'en' ? "Analyze these documents for statutory compliance and legal risks in Uganda." : language === 'lg' ? "Kebera ebiwandiiko bino olabe oba bituukana n'amateeka ga Uganda era olabe obuzibu obuyinza okubirimu." : "Shwijuma ebihandiiko ebi olabe amateeka ga Uganda era olabe oburemeezi oburimu.")}
                           className="flex items-center gap-2 px-3 py-2 bg-[#0B0F1A] text-[#C5A059] rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-[#1a1f2e] transition-all shadow-lg shadow-[#0B0F1A]/10 ml-auto"
                         >
                           <ShieldCheck size={14} />
-                          {language === 'en' ? 'Scan Documents' : 'Kebera ebiwandiiko'}
+                          {language === 'en' ? 'Scan Documents' : language === 'lg' ? 'Kebera ebiwandiiko' : 'Shwijuma Ebihandiiko'}
                         </button>
                       </div>
                     )}
@@ -1996,7 +2001,9 @@ export default function App() {
             <p className="text-[8px] sm:text-[10px] text-center text-slate-500 mt-3 sm:mt-6 font-bold uppercase tracking-[0.1em] px-4">
               {language === 'en' 
                 ? 'Statutory accuracy is verified against the Constitution and Laws of Uganda.' 
-                : 'Obutuufu bw\'amateeka bukakasibwa okusinziira ku nsonga z\'eggwanga n\'amateeka.'}
+                : language === 'lg'
+                  ? 'Obutuufu bw\'amateeka bukakasibwa okusinziira ku nsonga z\'eggwanga n\'amateeka.'
+                  : 'Obuhame bw\'amateeka nibushwijumwa okurugiirira aha nshonga z\'eihanga n\'amateeka ga Uganda.'}
             </p>
           </div>
         </footer>
