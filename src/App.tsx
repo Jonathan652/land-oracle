@@ -142,6 +142,74 @@ const Waveform = () => (
   </div>
 );
 
+const CallOverlay = ({ 
+  onClose, 
+  isRecording, 
+  isSpeaking, 
+  language 
+}: { 
+  onClose: () => void, 
+  isRecording: boolean, 
+  isSpeaking: boolean, 
+  language: string 
+}) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] bg-[#0B0F1A] flex flex-col items-center justify-between p-8 sm:p-12 text-white"
+    >
+      <div className="w-full flex justify-end">
+        <button onClick={onClose} className="p-4 hover:bg-white/10 rounded-full transition-all">
+          <X size={32} />
+        </button>
+      </div>
+
+      <div className="flex flex-col items-center gap-8">
+        <div className="relative">
+          <motion.div 
+            animate={{ 
+              scale: isRecording || isSpeaking ? [1, 1.2, 1] : 1,
+              opacity: isRecording || isSpeaking ? [0.5, 1, 0.5] : 0.5
+            }}
+            transition={{ repeat: Infinity, duration: 2 }}
+            className="absolute inset-0 bg-[#C5A059] rounded-full blur-3xl"
+          />
+          <div className="relative w-32 h-32 sm:w-48 sm:h-48 bg-[#1a1f2e] rounded-full flex items-center justify-center border-4 border-[#C5A059]/30 shadow-2xl">
+            <Scale size={64} className="text-[#C5A059]" />
+          </div>
+        </div>
+        
+        <div className="text-center space-y-4">
+          <h2 className="text-3xl sm:text-5xl font-display font-bold tracking-tight">
+            {language === 'en' ? 'Uganda Law Oracle' : language === 'lg' ? 'Amateeka ga Uganda' : 'Amateeka ga Uganda'}
+          </h2>
+          <p className="text-[#C5A059] font-mono font-bold tracking-[0.2em] uppercase text-sm sm:text-base">
+            {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
+             isRecording ? (language === 'en' ? 'Listening...' : 'Awuliriza...') : 
+             (language === 'en' ? 'Connected' : 'Ayungiddwa')}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center gap-8 w-full max-w-md">
+        <div className="flex items-center gap-8">
+          <button 
+            onClick={onClose}
+            className="w-16 h-16 sm:w-20 sm:h-20 bg-red-500 rounded-full flex items-center justify-center shadow-2xl shadow-red-500/40 hover:bg-red-600 transition-all active:scale-95"
+          >
+            <Smartphone size={32} className="rotate-[135deg]" />
+          </button>
+        </div>
+        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest text-center">
+          {language === 'en' ? 'Interactive Voice Mode' : 'Enkola y\'eddoboozi ey\'omulala'}
+        </p>
+      </div>
+    </motion.div>
+  );
+};
+
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     const saved = localStorage.getItem('uganda_law_oracle_sessions');
@@ -186,7 +254,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [isEmailVerifying, setIsEmailVerifying] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
-  const [autoTalkBack, setAutoTalkBack] = useState(true);
+  const [isCallMode, setIsCallMode] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [premiumReportsCount, setPremiumReportsCount] = useState(() => {
     const saved = localStorage.getItem('uganda_law_oracle_premium_reports');
@@ -708,7 +776,9 @@ If no speech is detected, return '[No speech detected]'.` }
       const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
       const systemPrompt = isDocumentMode 
         ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-        : SYSTEM_INSTRUCTION;
+        : isCallMode
+          ? `${SYSTEM_INSTRUCTION}\n\nINTERACTIVE VOICE MODE: You are on a phone call. Be extremely brief, conversational, and professional. Avoid long lists. Speak naturally.`
+          : SYSTEM_INSTRUCTION;
 
       if (isStreamingMode) {
         try {
@@ -750,7 +820,11 @@ If no speech is detected, return '[No speech detected]'.` }
             delete next[assistantMessageId];
             return next;
           });
-          speakText(fullText, assistantMessageId);
+          if (isCallMode) {
+            speakText(fullText, assistantMessageId, () => {
+              if (isCallMode) toggleRecording();
+            });
+          }
         } catch (err) {
           console.error("Streaming error:", err);
           throw err;
@@ -777,7 +851,11 @@ If no speech is detected, return '[No speech detected]'.` }
         const response = await Promise.race([responsePromise, timeoutPromise]) as any;
         const fullText = response.text || "I apologize.";
         updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-        speakText(fullText, assistantMessageId);
+        if (isCallMode) {
+          speakText(fullText, assistantMessageId, () => {
+            if (isCallMode) toggleRecording();
+          });
+        }
       }
         
       // Update usage
@@ -809,7 +887,7 @@ If no speech is detected, return '[No speech detected]'.` }
   };
 
   // --- TTS Logic ---
-  const speakText = async (text: string, messageId: string) => {
+  const speakText = async (text: string, messageId: string, onFinished?: () => void) => {
     if (isSpeaking === messageId) { stopSpeaking(); return; }
     
     // 1. Check if user is logged in or has free questions
@@ -840,7 +918,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
     // 1. Check Cache First
     if (audioCache[messageId]) {
-      playFromBuffer(audioCache[messageId], messageId);
+      playFromBuffer(audioCache[messageId], messageId, onFinished);
       return;
     }
 
@@ -935,6 +1013,7 @@ If no speech is detected, return '[No speech detected]'.` }
               activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
               if (activeSourcesRef.current.length === 0 && !isSpeakingCancelledRef.current) {
                 setIsSpeaking(null);
+                if (onFinished) onFinished();
               }
             };
           }
@@ -974,7 +1053,7 @@ If no speech is detected, return '[No speech detected]'.` }
         errorMsg = language === 'en' 
           ? "📢 Voice limit reached for now. You can still read the text below!" 
           : "📢 Eddoboozi liwummuddeko. Kyokka okyasobola okusoma obubaka wansi!";
-        setAutoTalkBack(false);
+        setIsCallMode(false);
       } else if (error?.message?.includes("not found") || error?.message?.includes("model")) {
         errorMsg = language === 'en'
           ? "📢 Voice model is updating. Please try again in a moment."
@@ -996,7 +1075,7 @@ If no speech is detected, return '[No speech detected]'.` }
     }
   };
 
-  const playFromBuffer = (buffer: AudioBuffer, messageId: string) => {
+  const playFromBuffer = (buffer: AudioBuffer, messageId: string, onFinished?: () => void) => {
     if (!audioContextRef.current) return;
     
     const source = audioContextRef.current.createBufferSource();
@@ -1004,7 +1083,10 @@ If no speech is detected, return '[No speech detected]'.` }
     source.connect(audioContextRef.current.destination);
     source.onended = () => {
       activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
-      if (activeSourcesRef.current.length === 0) setIsSpeaking(null);
+      if (activeSourcesRef.current.length === 0) {
+        setIsSpeaking(null);
+        if (onFinished) onFinished();
+      }
     };
     activeSourcesRef.current.push(source);
     setIsSpeaking(messageId);
@@ -1212,7 +1294,9 @@ If no speech is detected, return '[No speech detected]'.` }
 
       const systemPrompt = isDocumentMode 
         ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-        : SYSTEM_INSTRUCTION;
+        : isCallMode
+          ? `${SYSTEM_INSTRUCTION}\n\nINTERACTIVE VOICE MODE: You are on a phone call. Be extremely brief, conversational, and professional. Avoid long lists. Speak naturally.`
+          : SYSTEM_INSTRUCTION;
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
@@ -1291,9 +1375,11 @@ If no speech is detected, return '[No speech detected]'.` }
           return next;
         });
         
-        if (autoTalkBack && !hasToolCall) {
-          speakText(fullText, assistantMessageId);
-        }
+      if (isCallMode) {
+        speakText(fullText, assistantMessageId, () => {
+          if (isCallMode) toggleRecording();
+        });
+      }
       } else {
         const response = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
@@ -1337,9 +1423,11 @@ If no speech is detected, return '[No speech detected]'.` }
 
         updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         
-        if (autoTalkBack && !hasToolCall) {
-          speakText(assistantMessage.content, assistantMessageId);
-        }
+      if (isCallMode) {
+        speakText(assistantMessage.content, assistantMessageId, () => {
+          if (isCallMode) toggleRecording();
+        });
+      }
       }
 
       if (user && !isPro) {
@@ -1596,15 +1684,24 @@ If no speech is detected, return '[No speech detected]'.` }
 
           <div className="flex items-center gap-1 sm:gap-2">
             <button 
-              onClick={() => setAutoTalkBack(!autoTalkBack)}
+              onClick={() => {
+                setIsCallMode(!isCallMode);
+                if (!isCallMode) {
+                  // Start recording automatically when entering call mode
+                  setTimeout(() => toggleRecording(), 500);
+                } else {
+                  stopSpeaking();
+                  if (isRecording) stopRecording();
+                }
+              }}
               className={cn(
                 "p-1.5 sm:p-2 rounded-lg transition-all",
-                autoTalkBack ? "text-[#C5A059] bg-[#C5A059]/5" : "text-slate-500 hover:bg-slate-50"
+                isCallMode ? "text-[#C5A059] bg-[#C5A059]/5" : "text-slate-500 hover:bg-slate-50"
               )}
-              aria-label={language === 'en' ? (autoTalkBack ? "Disable Voice" : "Enable Voice") : (autoTalkBack ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
-              title={language === 'en' ? (autoTalkBack ? "Disable Voice" : "Enable Voice") : (autoTalkBack ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
+              aria-label={language === 'en' ? (isCallMode ? "End Call" : "Call Oracle") : (isCallMode ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
+              title={language === 'en' ? (isCallMode ? "End Call" : "Call Oracle") : (isCallMode ? "Ggyako Eddoboozi" : "Koleeza Eddoboozi")}
             >
-              {autoTalkBack ? <Volume2 size={18} className="sm:w-5 sm:h-5" /> : <VolumeX size={18} className="sm:w-5 sm:h-5" />}
+              <Smartphone size={18} className="sm:w-5 sm:h-5" />
             </button>
             <button 
               onClick={() => setLanguage(l => l === 'en' ? 'lg' : l === 'lg' ? 'nk' : 'en')}
@@ -2009,6 +2106,22 @@ If no speech is detected, return '[No speech detected]'.` }
         </footer>
       )}
     </main>
+
+      {/* Call Mode Overlay */}
+      <AnimatePresence>
+        {isCallMode && (
+          <CallOverlay 
+            language={language}
+            isRecording={isRecording}
+            isSpeaking={!!isSpeaking}
+            onClose={() => {
+              setIsCallMode(false);
+              stopSpeaking();
+              if (isRecording) stopRecording();
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Auth Modal */}
       <AnimatePresence>
