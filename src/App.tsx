@@ -3,7 +3,7 @@
  * Statum AI - Trilingual Legal Assistant
  */
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Modality, Type, FunctionDeclaration } from "@google/genai";
+import { GoogleGenAI, Modality, Type, FunctionDeclaration, LiveServerMessage } from "@google/genai";
 import { 
   MessageSquare, 
   Send, 
@@ -226,8 +226,8 @@ const CallOverlay = ({
           </h2>
           <p className="text-[#C5A059] font-mono font-bold tracking-[0.3em] uppercase text-sm sm:text-lg">
             {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
+             isThinking ? (language === 'en' ? 'Connecting...' : 'Ayungibwa...') :
              isTranscribing ? (language === 'en' ? 'Transcribing...' : 'Nkyusa eddoboozi...') :
-             isThinking ? (language === 'en' ? 'Thinking...' : 'Alowooza...') :
              isRecording ? (language === 'en' ? 'Listening...' : 'Awuliriza...') : 
              (language === 'en' ? 'Connected' : 'Ayungiddwa')}
           </p>
@@ -271,13 +271,16 @@ const CallOverlay = ({
           </div>
         </div>
 
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-4">
           <button 
             onClick={onClose}
             className="w-20 h-20 sm:w-24 sm:h-24 bg-red-500 rounded-full flex items-center justify-center shadow-2xl shadow-red-500/40 hover:bg-red-600 transition-all active:scale-90 group"
           >
             <Smartphone size={40} className="rotate-[135deg] group-hover:scale-110 transition-transform" />
           </button>
+          <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
+            {language === 'en' ? 'End Call' : 'Malawo essimu'}
+          </span>
         </div>
       </div>
     </motion.div>
@@ -329,10 +332,18 @@ export default function App() {
   const [isEmailVerifying, setIsEmailVerifying] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
   const [isCallMode, setIsCallMode] = useState(false);
+  const [isLiveActive, setIsLiveActive] = useState(false);
+  const [isLiveSpeaking, setIsLiveSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [currentVolume, setCurrentVolume] = useState(0);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isLoopRestartPendingRef = useRef(false);
+  const liveSessionRef = useRef<any>(null);
+  const liveAudioQueueRef = useRef<Float32Array[]>([]);
+  const isPlayingLiveRef = useRef(false);
+  const nextLiveStartTimeRef = useRef(0);
+  const liveStreamRef = useRef<MediaStream | null>(null);
+  const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
   const speakQueueRef = useRef<string[]>([]);
   const isSpeakingQueueRef = useRef(false);
   const sentenceBufferRef = useRef("");
@@ -513,8 +524,213 @@ export default function App() {
     }
   };
 
+  // --- Live API Logic ---
+  const startLiveSession = async () => {
+    try {
+      if (isLiveActive) return;
+      
+      console.log("Statum AI: Connecting to Live API...");
+      setIsLoading(true);
+      setIsLiveActive(true);
+      
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+
+      const ai = getAI();
+      const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
+      
+      const session = await ai.live.connect({
+        model: "gemini-3.1-flash-live-preview",
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+          },
+          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are having a real-time conversation. Be brief, professional, and helpful. Respond in the same language as the user.`,
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+        },
+        callbacks: {
+          onopen: async () => {
+            console.log("Statum AI: Live session opened");
+            setIsLoading(false);
+            
+            // Setup Microphone Stream
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            liveStreamRef.current = stream;
+            
+            const source = audioContextRef.current!.createMediaStreamSource(stream);
+            const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
+            processorNodeRef.current = processor;
+            
+            source.connect(processor);
+            processor.connect(audioContextRef.current!.destination);
+            
+            processor.onaudioprocess = (e) => {
+              const inputData = e.inputBuffer.getChannelData(0);
+              
+              // Downsample to 16kHz and convert to 16-bit PCM
+              const ratio = audioContextRef.current!.sampleRate / 16000;
+              const newLength = Math.floor(inputData.length / ratio);
+              const pcmData = new Int16Array(newLength);
+              
+              for (let i = 0; i < newLength; i++) {
+                const index = Math.floor(i * ratio);
+                pcmData[i] = Math.max(-1, Math.min(1, inputData[index])) * 0x7FFF;
+              }
+              
+              // Calculate volume for visualizer
+              let sum = 0;
+              for (let i = 0; i < inputData.length; i++) {
+                sum += inputData[i] * inputData[i];
+              }
+              const volume = Math.sqrt(sum / inputData.length) * 100;
+              setCurrentVolume(volume);
+              
+              // Send to Gemini
+              const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+              session.sendRealtimeInput({
+                audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
+              });
+            };
+          },
+          onmessage: async (message: any) => {
+            // Handle Audio Output
+            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (base64Audio) {
+              const binaryString = atob(base64Audio);
+              const len = binaryString.length;
+              const bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              
+              const dataView = new DataView(bytes.buffer);
+              const numSamples = Math.floor(len / 2);
+              const float32 = new Float32Array(numSamples);
+              for (let i = 0; i < numSamples; i++) {
+                float32[i] = dataView.getInt16(i * 2, true) / 32768;
+              }
+              
+              queueLiveAudio(float32);
+            }
+            
+            // Handle Interruption
+            if (message.serverContent?.interrupted) {
+              console.log("Statum AI: Interrupted by user");
+              stopLiveAudio();
+            }
+            
+            // Handle Transcriptions
+            const modelText = message.serverContent?.modelTurn?.parts?.[0]?.text;
+            if (modelText) {
+              setStreamingContent(prev => ({ ...prev, live: (prev.live || "") + modelText }));
+            }
+            
+            const userText = message.serverContent?.userContent?.parts?.[0]?.text;
+            if (userText) {
+              setInput(userText);
+              // Clear previous AI response when user starts speaking
+              setStreamingContent(prev => ({ ...prev, live: "" }));
+            }
+          },
+          onclose: () => {
+            console.log("Statum AI: Live session closed");
+            stopLiveSession();
+          },
+          onerror: (err) => {
+            console.error("Statum AI: Live session error:", err);
+            setVoiceError("Connection lost. Reconnecting...");
+            stopLiveSession();
+            setTimeout(startLiveSession, 2000);
+          }
+        }
+      });
+      
+      liveSessionRef.current = session;
+    } catch (err) {
+      console.error("Statum AI: Failed to start live session:", err);
+      setIsLoading(false);
+      setIsLiveActive(false);
+      setVoiceError("Failed to start voice mode. Please check your microphone permissions.");
+    }
+  };
+
+  const stopLiveSession = () => {
+    if (liveSessionRef.current) {
+      liveSessionRef.current.close();
+      liveSessionRef.current = null;
+    }
+    if (processorNodeRef.current) {
+      processorNodeRef.current.disconnect();
+      processorNodeRef.current = null;
+    }
+    if (liveStreamRef.current) {
+      liveStreamRef.current.getTracks().forEach(t => t.stop());
+      liveStreamRef.current = null;
+    }
+    stopLiveAudio();
+    setIsLiveActive(false);
+    setIsLoading(false);
+    setCurrentVolume(0);
+  };
+
+  const queueLiveAudio = (samples: Float32Array) => {
+    liveAudioQueueRef.current.push(samples);
+    if (!isPlayingLiveRef.current) {
+      setIsLiveSpeaking(true);
+      playNextLiveChunk();
+    }
+  };
+
+  const playNextLiveChunk = () => {
+    if (liveAudioQueueRef.current.length === 0) {
+      isPlayingLiveRef.current = false;
+      setIsLiveSpeaking(false);
+      return;
+    }
+
+    isPlayingLiveRef.current = true;
+    const samples = liveAudioQueueRef.current.shift()!;
+    const buffer = audioContextRef.current!.createBuffer(1, samples.length, 16000);
+    buffer.getChannelData(0).set(samples);
+    
+    const source = audioContextRef.current!.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContextRef.current!.destination);
+    
+    // Schedule for gapless playback
+    const startTime = Math.max(audioContextRef.current!.currentTime, nextLiveStartTimeRef.current);
+    source.start(startTime);
+    nextLiveStartTimeRef.current = startTime + buffer.duration;
+    
+    source.onended = () => {
+      playNextLiveChunk();
+    };
+  };
+
+  const stopLiveAudio = () => {
+    liveAudioQueueRef.current = [];
+    isPlayingLiveRef.current = false;
+    setIsLiveSpeaking(false);
+    nextLiveStartTimeRef.current = 0;
+  };
+
   // --- Recording Logic ---
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isCallMode) {
+      startLiveSession();
+    } else {
+      stopLiveSession();
+    }
+    return () => stopLiveSession();
+  }, [isCallMode]);
 
   const startRecording = async () => {
     if (isRecording || isTranscribing) return;
@@ -2398,17 +2614,15 @@ If no speech is detected, return '[No speech detected]'.` }
           <CallOverlay 
             onClose={() => {
               setIsCallMode(false);
-              stopSpeaking();
-              if (isRecording) stopRecording();
             }}
-            isRecording={isRecording}
-            isSpeaking={!!isSpeaking}
+            isRecording={isLiveActive && !isLiveSpeaking}
+            isSpeaking={isLiveSpeaking}
             language={language}
             currentVolume={currentVolume}
             transcription={input || ""}
-            assistantResponse={Object.values(streamingContent)[0] || ""}
-            isThinking={isLoading && !isSpeaking && !isRecording && !isTranscribing}
-            isTranscribing={isTranscribing}
+            assistantResponse={streamingContent.live || ""}
+            isThinking={isLoading}
+            isTranscribing={false}
             error={voiceError}
           />
         )}
