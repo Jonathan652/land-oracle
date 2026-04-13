@@ -151,6 +151,7 @@ const CallOverlay = ({
   transcription,
   assistantResponse,
   isThinking,
+  isTranscribing,
   error
 }: { 
   onClose: () => void, 
@@ -161,6 +162,7 @@ const CallOverlay = ({
   transcription: string,
   assistantResponse: string,
   isThinking: boolean,
+  isTranscribing: boolean,
   error: string | null
 }) => {
   return (
@@ -184,8 +186,8 @@ const CallOverlay = ({
         <div className="relative">
           <motion.div 
             animate={{ 
-              scale: (isRecording || isSpeaking) ? 1 + (currentVolume / 100) : 1,
-              opacity: (isRecording || isSpeaking) ? 0.3 + (currentVolume / 200) : 0.2
+              scale: (isRecording || isSpeaking || isThinking || isTranscribing) ? 1 + (currentVolume / 100) + (isThinking || isTranscribing ? 0.1 : 0) : 1,
+              opacity: (isRecording || isSpeaking || isThinking || isTranscribing) ? 0.3 + (currentVolume / 200) + (isThinking || isTranscribing ? 0.2 : 0) : 0.2
             }}
             transition={{ type: "spring", stiffness: 100, damping: 10 }}
             className="absolute inset-0 bg-[#C5A059] rounded-full blur-3xl"
@@ -193,7 +195,7 @@ const CallOverlay = ({
           <div className="relative w-40 h-40 sm:w-56 sm:h-56 bg-[#1a1f2e] rounded-full flex items-center justify-center border-4 border-[#C5A059]/30 shadow-2xl">
             <Scale size={80} className={cn(
               "text-[#C5A059] transition-transform duration-200",
-              (isRecording || isSpeaking) && "scale-110"
+              (isRecording || isSpeaking || isThinking || isTranscribing) && "scale-110"
             )} />
           </div>
           
@@ -224,6 +226,7 @@ const CallOverlay = ({
           </h2>
           <p className="text-[#C5A059] font-mono font-bold tracking-[0.3em] uppercase text-sm sm:text-lg">
             {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
+             isTranscribing ? (language === 'en' ? 'Transcribing...' : 'Nkyusa eddoboozi...') :
              isThinking ? (language === 'en' ? 'Thinking...' : 'Alowooza...') :
              isRecording ? (language === 'en' ? 'Listening...' : 'Awuliriza...') : 
              (language === 'en' ? 'Connected' : 'Ayungiddwa')}
@@ -329,6 +332,7 @@ export default function App() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [currentVolume, setCurrentVolume] = useState(0);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isLoopRestartPendingRef = useRef(false);
   const speakQueueRef = useRef<string[]>([]);
   const isSpeakingQueueRef = useRef(false);
   const sentenceBufferRef = useRef("");
@@ -618,7 +622,12 @@ export default function App() {
         
         if (audioChunksRef.current.length === 0) {
           console.warn("No audio data captured.");
-          setRecordingError(language === 'en' ? "No audio data captured. Please try again." : language === 'lg' ? "Tewali ddoboozi likwatiddwa. Gezaako nate." : "Tihali ddoboozi erikwatirwe. Gezaako nate.");
+          const msg = language === 'en' ? "No audio data captured. Please try again." : language === 'lg' ? "Tewali ddoboozi likwatiddwa. Gezaako nate." : "Tihali ddoboozi erikwatirwe. Gezaako nate.";
+          if (isCallMode) {
+            setVoiceError(msg);
+          } else {
+            setRecordingError(msg);
+          }
           setIsRecording(false);
           return;
         }
@@ -628,9 +637,19 @@ export default function App() {
         console.log("Recording stopped. Blob size:", sizeKB, "KB", "Type:", audioBlob.type);
 
         // If size is too small, it's likely silence or a hardware glitch
-        if (audioBlob.size < 4000) { // Increased threshold to 4KB (approx 1-2s of audio)
-          setRecordingError(language === 'en' ? `Audio too short or silent (${sizeKB}KB). Please speak longer.` : language === 'lg' ? `Eddoboozi liyimpitidde nnyo oba tewali ddoboozi (${sizeKB}KB). Gezaako nate.` : `Eddoboozi nirigaba lifwiire nnyo oba tihali ddoboozi (${sizeKB}KB). Gezaako nate.`);
-          setIsRecording(false);
+        if (audioBlob.size < 1000) { // Lowered threshold for Call Mode responsiveness
+          if (isCallMode) {
+            console.log("Statum AI: Audio too short, restarting loop...");
+            setIsRecording(false);
+            setTimeout(() => {
+              if (isCallMode && !isRecording && !isSpeaking && !isTranscribing) {
+                toggleRecording();
+              }
+            }, 1000);
+          } else {
+            setRecordingError(language === 'en' ? `Audio too short or silent (${sizeKB}KB). Please speak longer.` : language === 'lg' ? `Eddoboozi liyimpitidde nnyo oba tewali ddoboozi (${sizeKB}KB). Gezaako nate.` : `Eddoboozi nirigaba lifwiire nnyo oba tihali ddoboozi (${sizeKB}KB). Gezaako nate.`);
+            setIsRecording(false);
+          }
           return;
         }
 
@@ -680,7 +699,7 @@ export default function App() {
         setCurrentVolume(average);
         
         if (isCallMode) {
-          if (average < 10) { // Increased threshold slightly for noisy environments
+          if (average < 12) { // Increased threshold for better noise tolerance
             if (!silenceTimeoutRef.current) {
               silenceTimeoutRef.current = setTimeout(() => {
                 console.log("Statum AI: Silence detected, stopping recording...");
@@ -985,7 +1004,13 @@ If no speech is detected, return '[No speech detected]'.` }
             const checkFinished = setInterval(() => {
               if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
                 clearInterval(checkFinished);
-                if (isCallMode) toggleRecording();
+                if (isCallMode && !isLoopRestartPendingRef.current) {
+                  isLoopRestartPendingRef.current = true;
+                  setTimeout(() => {
+                    isLoopRestartPendingRef.current = false;
+                    if (isCallMode && !isRecording && !isSpeaking) toggleRecording();
+                  }, 1000);
+                }
               }
             }, 500);
           }
@@ -1022,7 +1047,13 @@ If no speech is detected, return '[No speech detected]'.` }
           const checkFinished = setInterval(() => {
             if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
               clearInterval(checkFinished);
-              if (isCallMode) toggleRecording();
+              if (isCallMode && !isLoopRestartPendingRef.current) {
+                isLoopRestartPendingRef.current = true;
+                setTimeout(() => {
+                  isLoopRestartPendingRef.current = false;
+                  if (isCallMode && !isRecording && !isSpeaking) toggleRecording();
+                }, 1000);
+              }
             }
           }, 500);
         }
@@ -1055,10 +1086,11 @@ If no speech is detected, return '[No speech detected]'.` }
       setIsTranscribing(false);
       
       // Ensure the call loop continues even after errors
-      if (isCallMode && !isSpeaking && !isRecording && !isSpeakingQueueRef.current && speakQueueRef.current.length === 0) {
+      if (isCallMode && !isSpeaking && !isRecording && !isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isLoopRestartPendingRef.current) {
         // If we're not speaking and not recording, and there's no queue, restart listening
-        // We add a small delay to avoid immediate feedback loops
+        isLoopRestartPendingRef.current = true;
         setTimeout(() => {
+          isLoopRestartPendingRef.current = false;
           if (isCallMode && !isSpeaking && !isRecording && !isSpeakingQueueRef.current) {
             toggleRecording();
           }
@@ -2375,7 +2407,8 @@ If no speech is detected, return '[No speech detected]'.` }
             currentVolume={currentVolume}
             transcription={input || ""}
             assistantResponse={Object.values(streamingContent)[0] || ""}
-            isThinking={isLoading && !isSpeaking && !isRecording}
+            isThinking={isLoading && !isSpeaking && !isRecording && !isTranscribing}
+            isTranscribing={isTranscribing}
             error={voiceError}
           />
         )}
