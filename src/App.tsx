@@ -550,7 +550,7 @@ export default function App() {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are having a real-time conversation. Be brief, professional, and helpful. Respond in the same language as the user.`,
+          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are in a real-time voice conversation. Keep responses extremely concise (1-2 sentences). You MUST respond in the language the user speaks to you in. You are proficient in English, Luganda, Swahili, and Runyankore. If the user speaks Runyankore, respond in clear, natural Runyankore. Use simple words and avoid complex legal jargon in Runyankore to ensure clarity.`,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
         },
@@ -681,36 +681,48 @@ export default function App() {
 
   const queueLiveAudio = (samples: Float32Array) => {
     liveAudioQueueRef.current.push(samples);
-    if (!isPlayingLiveRef.current) {
-      setIsLiveSpeaking(true);
-      playNextLiveChunk();
-    }
+    processLiveAudioQueue();
   };
 
-  const playNextLiveChunk = () => {
-    if (liveAudioQueueRef.current.length === 0) {
-      isPlayingLiveRef.current = false;
-      setIsLiveSpeaking(false);
+  const processLiveAudioQueue = () => {
+    if (!audioContextRef.current || liveAudioQueueRef.current.length === 0) {
+      if (liveAudioQueueRef.current.length === 0 && !isPlayingLiveRef.current) {
+        setIsLiveSpeaking(false);
+      }
       return;
     }
 
+    setIsLiveSpeaking(true);
     isPlayingLiveRef.current = true;
-    const samples = liveAudioQueueRef.current.shift()!;
-    const buffer = audioContextRef.current!.createBuffer(1, samples.length, 16000);
-    buffer.getChannelData(0).set(samples);
-    
-    const source = audioContextRef.current!.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioContextRef.current!.destination);
-    
-    // Schedule for gapless playback
-    const startTime = Math.max(audioContextRef.current!.currentTime, nextLiveStartTimeRef.current);
-    source.start(startTime);
-    nextLiveStartTimeRef.current = startTime + buffer.duration;
-    
-    source.onended = () => {
-      playNextLiveChunk();
-    };
+
+    while (liveAudioQueueRef.current.length > 0) {
+      const samples = liveAudioQueueRef.current.shift()!;
+      const buffer = audioContextRef.current.createBuffer(1, samples.length, 16000);
+      buffer.getChannelData(0).set(samples);
+      
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContextRef.current.destination);
+      
+      const currentTime = audioContextRef.current.currentTime;
+      // If we are starting fresh or the previous chunk is way in the past, start with a tiny buffer
+      let startTime = nextLiveStartTimeRef.current;
+      if (startTime < currentTime) {
+        startTime = currentTime + 0.05; 
+      }
+      
+      source.start(startTime);
+      nextLiveStartTimeRef.current = startTime + buffer.duration;
+      
+      source.onended = () => {
+        if (audioContextRef.current && audioContextRef.current.currentTime >= nextLiveStartTimeRef.current - 0.1) {
+          isPlayingLiveRef.current = false;
+          if (liveAudioQueueRef.current.length === 0) {
+            setIsLiveSpeaking(false);
+          }
+        }
+      };
+    }
   };
 
   const stopLiveAudio = () => {
