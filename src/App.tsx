@@ -150,7 +150,8 @@ const CallOverlay = ({
   currentVolume,
   transcription,
   assistantResponse,
-  isThinking
+  isThinking,
+  error
 }: { 
   onClose: () => void, 
   isRecording: boolean, 
@@ -159,7 +160,8 @@ const CallOverlay = ({
   currentVolume: number,
   transcription: string,
   assistantResponse: string,
-  isThinking: boolean
+  isThinking: boolean,
+  error: string | null
 }) => {
   return (
     <motion.div 
@@ -232,6 +234,12 @@ const CallOverlay = ({
       <div className="w-full max-w-2xl space-y-8">
         <div className="bg-white/5 rounded-3xl p-6 sm:p-8 backdrop-blur-md border border-white/10 shadow-2xl">
           <div className="space-y-6">
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-3 text-red-400">
+                <AlertTriangle size={20} className="shrink-0" />
+                <p className="text-sm font-medium">{error}</p>
+              </div>
+            )}
             {transcription && (
               <div className="space-y-2">
                 <p className="text-[#C5A059] text-[10px] font-bold uppercase tracking-widest opacity-60">You</p>
@@ -672,12 +680,12 @@ export default function App() {
         setCurrentVolume(average);
         
         if (isCallMode) {
-          if (average < 8) { // Silence threshold
+          if (average < 10) { // Increased threshold slightly for noisy environments
             if (!silenceTimeoutRef.current) {
               silenceTimeoutRef.current = setTimeout(() => {
                 console.log("Statum AI: Silence detected, stopping recording...");
                 stopRecording();
-              }, 1800); // 1.8s of silence
+              }, 3000); // 3s of silence for better natural pauses
             }
           } else {
             if (silenceTimeoutRef.current) {
@@ -891,6 +899,18 @@ If no speech is detected, return '[No speech detected]'.` }
       const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : language === 'lg' ? "[Okukyusa kulemye]" : "[Okuhandiika kuremwa]");
       setInput(transcribedText);
       
+      if (isCallMode) {
+        if (transcribedText.includes("[No speech detected]") || transcribedText.length < 2) {
+          console.log("Statum AI: No speech detected, restarting recording...");
+          setVoiceError(language === 'en' ? "I didn't catch that. Please try again." : "Sikiwulidde bulungi. Gezaako nate.");
+          setIsTranscribing(false);
+          setIsLoading(false);
+          updateSessionMessages(prev => prev.filter(m => m.id !== userMessageId));
+          if (isCallMode) toggleRecording();
+          return;
+        }
+      }
+
       // 5. Update user message with transcribed text
       updateSessionMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, content: transcribedText } : m));
       setIsTranscribing(false);
@@ -1033,6 +1053,17 @@ If no speech is detected, return '[No speech detected]'.` }
     } finally {
       setIsLoading(false);
       setIsTranscribing(false);
+      
+      // Ensure the call loop continues even after errors
+      if (isCallMode && !isSpeaking && !isRecording && !isSpeakingQueueRef.current && speakQueueRef.current.length === 0) {
+        // If we're not speaking and not recording, and there's no queue, restart listening
+        // We add a small delay to avoid immediate feedback loops
+        setTimeout(() => {
+          if (isCallMode && !isSpeaking && !isRecording && !isSpeakingQueueRef.current) {
+            toggleRecording();
+          }
+        }, 1500);
+      }
     }
   };
 
@@ -1096,12 +1127,14 @@ If no speech is detected, return '[No speech detected]'.` }
     if (!currentUser && freeQuestionsRemaining <= 0) {
       setShowAuthModal(true);
       setVoiceError(language === 'en' ? "Please sign in to use voice features." : language === 'lg' ? "Yingira okusobola okukozesa eddoboozi." : "Yingira okusobola okukozesa eddoboozi.");
+      if (onFinished) onFinished();
       return;
     }
 
     // 2. Check voice quota
     if (!isPro && voiceMessagesRemaining <= 0) {
       setVoiceError(language === 'en' ? "Voice limit reached. Upgrade to Pro for unlimited voice." : language === 'lg' ? "Eddoboozi liweddeko. Gula Pro okusobola okukozesa eddoboozi mu ngeri etaliiko kkomo." : "Eddoboozi rihwireho. Gura Pro okusobola okukozesa eddoboozi n'obusingye.");
+      if (onFinished) onFinished();
       return;
     }
 
@@ -1143,6 +1176,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
       if (!cleanedText) {
         setIsAudioLoading(null);
+        if (onFinished) onFinished();
         return;
       }
 
@@ -1271,6 +1305,7 @@ If no speech is detected, return '[No speech detected]'.` }
       
       setVoiceError(errorMsg);
       setTimeout(() => setVoiceError(null), 5000);
+      if (onFinished) onFinished();
     } finally {
       setIsAudioLoading(null);
     }
@@ -2341,6 +2376,7 @@ If no speech is detected, return '[No speech detected]'.` }
             transcription={input || ""}
             assistantResponse={Object.values(streamingContent)[0] || ""}
             isThinking={isLoading && !isSpeaking && !isRecording}
+            error={voiceError}
           />
         )}
       </AnimatePresence>
