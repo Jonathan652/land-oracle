@@ -1,6 +1,6 @@
 /**
  * Developed by Musiime Jonathan
- * Uganda Law Oracle - Trilingual Legal Assistant
+ * Statum AI - Trilingual Legal Assistant
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type, FunctionDeclaration } from "@google/genai";
@@ -183,7 +183,7 @@ const CallOverlay = ({
         
         <div className="text-center space-y-4">
           <h2 className="text-3xl sm:text-5xl font-display font-bold tracking-tight">
-            {language === 'en' ? 'Uganda Law Oracle' : language === 'lg' ? 'Amateeka ga Uganda' : 'Amateeka ga Uganda'}
+            {language === 'en' ? 'Statum AI' : language === 'lg' ? 'Statum AI' : 'Statum AI'}
           </h2>
           <p className="text-[#C5A059] font-mono font-bold tracking-[0.2em] uppercase text-sm sm:text-base">
             {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
@@ -727,7 +727,7 @@ export default function App() {
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: `You are the Uganda Law Oracle. Transcribe the following audio precisely. 
+                { text: `You are Statum AI. Transcribe the following audio precisely. 
 The user's interface is currently set to ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}.
 IMPORTANT: If the user is speaking Runyankore (a language from Western Uganda), transcribe it accurately in Runyankore. Do NOT confuse it with Luganda. Runyankore has distinct phonetics and vocabulary (e.g., uses 'r' more frequently where Luganda uses 'l').
 Recognize legal terms and names common in Uganda (e.g., 'Amateeka', 'Omushango', 'Endagaano', 'Puliida', 'Eihanga', 'Obuhasirizi').
@@ -1508,7 +1508,7 @@ If no speech is detected, return '[No speech detected]'.` }
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Uganda Law Oracle</h1>
+                <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Statum AI</h1>
                 <div className="px-1.5 py-0.5 bg-[#C5A059] text-[#0B0F1A] text-[8px] font-black rounded uppercase tracking-tighter">Pro</div>
               </div>
               <p className="text-[10px] text-[#C5A059] font-bold uppercase tracking-[0.2em]">Legal Information System</p>
@@ -1741,7 +1741,7 @@ If no speech is detected, return '[No speech detected]'.` }
                         <Scale size={32} className="sm:w-12 sm:h-12" />
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-display font-bold text-[#0B0F1A] tracking-tight leading-tight">
-                        {language === 'en' ? 'Uganda Law Oracle' : language === 'lg' ? 'Amateeka ga Uganda' : 'Amateeka ga Uganda'}
+                        {language === 'en' ? 'Statum AI' : language === 'lg' ? 'Statum AI' : 'Statum AI'}
                       </h2>
                       <p className="text-base sm:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed px-4">
                         {language === 'en' 
@@ -1834,7 +1834,7 @@ If no speech is detected, return '[No speech detected]'.` }
                               <button 
                                 onClick={() => {
                                   const text = streamingContent[m.id] || m.content;
-                                  const url = `https://wa.me/?text=${encodeURIComponent(`⚖️ *Uganda Law Oracle Summary*\n\n${text.substring(0, 500)}${text.length > 500 ? '...' : ''}\n\n_Get professional legal guidance at: ${window.location.href}_`)}`;
+                                  const url = `https://wa.me/?text=${encodeURIComponent(`⚖️ *Statum AI Summary*\n\n${text.substring(0, 500)}${text.length > 500 ? '...' : ''}\n\n_Get professional legal guidance at: ${window.location.href}_`)}`;
                                   window.open(url, '_blank');
                                 }}
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-green-500/20 transition-all"

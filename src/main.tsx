@@ -1,6 +1,6 @@
 /**
  * Developed by Musiime Jonathan
- * Uganda Law Oracle - Trilingual Legal Assistant
+ * Statum AI - Trilingual Legal Assistant
  */
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';

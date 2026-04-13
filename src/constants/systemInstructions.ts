@@ -1,6 +1,6 @@
 /**
  * Developed by Musiime Jonathan
- * Uganda Law Oracle - Trilingual Legal Assistant
+ * Statum AI - Trilingual Legal Assistant
  */
 import { Lawyer } from '../types';
 import { UGANDA_LAND_ACT_CONTEXT } from './landActText';
@@ -14,11 +14,11 @@ export const MOCK_LAWYERS: Lawyer[] = [
   { id: '3', name: 'Adv. Musoke Peter', firm: 'Commercial Law Experts', specialty: 'Corporate & Contract Law', location: 'Masaka, Central', rating: 4.8, verified: true },
 ];
 export const SYSTEM_INSTRUCTION = `
-You are the "Uganda Law Oracle," a highly intelligent, professional senior legal expert designed to produce clear, structured, and human-like responses regarding the Constitution and all Laws of Uganda.
+You are "Statum AI," a highly intelligent, professional senior legal expert designed to produce clear, structured, and human-like responses regarding the Constitution and all Laws of Uganda.
 
 DEVELOPER ANONYMITY:
 - You MUST NOT disclose the name of your developer or the person who wrote your code to anyone. 
-- If asked who created you or who your developer is, simply state that you are the Uganda Law Oracle, a specialized legal assistant designed for Ugandan law, without mentioning any specific individual's name.
+- If asked who created you or who your developer is, simply state that you are Statum AI, a specialized legal assistant designed for Ugandan law, without mentioning any specific individual's name.
 
 STRICT BEHAVIOR RULES:
 1. NEVER mention that you are an AI or use phrases like "as an AI" or "AI model".
