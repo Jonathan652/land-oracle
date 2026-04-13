@@ -256,6 +256,10 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [isCallMode, setIsCallMode] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const speakQueueRef = useRef<string[]>([]);
+  const isSpeakingQueueRef = useRef(false);
+  const sentenceBufferRef = useRef("");
+  const processedSentencesRef = useRef<Set<string>>(new Set());
   const [premiumReportsCount, setPremiumReportsCount] = useState(() => {
     const saved = localStorage.getItem('uganda_law_oracle_premium_reports');
     return saved ? parseInt(saved, 10) : 0;
@@ -777,7 +781,7 @@ If no speech is detected, return '[No speech detected]'.` }
       const systemPrompt = isDocumentMode 
         ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
         : isCallMode
-          ? `${SYSTEM_INSTRUCTION}\n\nINTERACTIVE VOICE MODE: You are on a phone call. Be extremely brief, conversational, and professional. Avoid long lists. Speak naturally.`
+          ? `${SYSTEM_INSTRUCTION}\n\nINTERACTIVE VOICE MODE: You are on a phone call. BE EXTREMELY BRIEF (1-2 sentences max). Be conversational and professional. NO LISTS. NO BULLET POINTS. Speak naturally like a human on a call. Respond in the same language as the user.`
           : SYSTEM_INSTRUCTION;
 
       if (isStreamingMode) {
@@ -820,10 +824,21 @@ If no speech is detected, return '[No speech detected]'.` }
             delete next[assistantMessageId];
             return next;
           });
+
+          // Final check for any remaining text that wasn't caught by the sentence buffer
           if (isCallMode) {
-            speakText(fullText, assistantMessageId, () => {
-              if (isCallMode) toggleRecording();
-            });
+            const remaining = fullText.trim();
+            if (remaining && !processedSentencesRef.current.has(remaining)) {
+              queueSentence(remaining, assistantMessageId);
+            }
+            
+            // Wait for all sentences to finish speaking before listening again
+            const checkFinished = setInterval(() => {
+              if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
+                clearInterval(checkFinished);
+                if (isCallMode) toggleRecording();
+              }
+            }, 500);
           }
         } catch (err) {
           console.error("Streaming error:", err);
@@ -852,9 +867,15 @@ If no speech is detected, return '[No speech detected]'.` }
         const fullText = response.text || "I apologize.";
         updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         if (isCallMode) {
-          speakText(fullText, assistantMessageId, () => {
-            if (isCallMode) toggleRecording();
-          });
+          queueSentence(fullText, assistantMessageId);
+          
+          // Wait for all sentences to finish speaking before listening again
+          const checkFinished = setInterval(() => {
+            if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
+              clearInterval(checkFinished);
+              if (isCallMode) toggleRecording();
+            }
+          }, 500);
         }
       }
         
@@ -887,8 +908,59 @@ If no speech is detected, return '[No speech detected]'.` }
   };
 
   // --- TTS Logic ---
+  useEffect(() => {
+    if (!isCallMode) {
+      sentenceBufferRef.current = "";
+      processedSentencesRef.current.clear();
+      speakQueueRef.current = [];
+      return;
+    }
+
+    const assistantMessageId = Object.keys(streamingContent)[0];
+    if (!assistantMessageId) return;
+
+    const content = streamingContent[assistantMessageId];
+    if (!content) return;
+
+    // Detect sentences: . ! ? or \n
+    const sentences = content.split(/(?<=[.!?])\s+|\n+/);
+    
+    sentences.forEach(sentence => {
+      const trimmed = sentence.trim();
+      if (trimmed.length > 10 && !processedSentencesRef.current.has(trimmed)) {
+        // Only queue if it ends with punctuation or is long enough
+        if (/[.!?]$/.test(trimmed) || trimmed.length > 100) {
+          processedSentencesRef.current.add(trimmed);
+          queueSentence(trimmed, assistantMessageId);
+        }
+      }
+    });
+  }, [streamingContent, isCallMode]);
+
+  const queueSentence = async (text: string, messageId: string) => {
+    speakQueueRef.current.push(text);
+    if (!isSpeakingQueueRef.current) {
+      processSpeakQueue(messageId);
+    }
+  };
+
+  const processSpeakQueue = async (messageId: string) => {
+    if (speakQueueRef.current.length === 0) {
+      isSpeakingQueueRef.current = false;
+      return;
+    }
+
+    isSpeakingQueueRef.current = true;
+    const nextText = speakQueueRef.current.shift();
+    if (nextText) {
+      await speakText(nextText, messageId, () => {
+        processSpeakQueue(messageId);
+      });
+    }
+  };
+
   const speakText = async (text: string, messageId: string, onFinished?: () => void) => {
-    if (isSpeaking === messageId) { stopSpeaking(); return; }
+    console.log("Statum AI: Speaking sentence:", text.substring(0, 30) + "...");
     
     // 1. Check if user is logged in or has free questions
     const currentUser = user || auth.currentUser;
@@ -1295,7 +1367,7 @@ If no speech is detected, return '[No speech detected]'.` }
       const systemPrompt = isDocumentMode 
         ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
         : isCallMode
-          ? `${SYSTEM_INSTRUCTION}\n\nINTERACTIVE VOICE MODE: You are on a phone call. Be extremely brief, conversational, and professional. Avoid long lists. Speak naturally.`
+          ? `${SYSTEM_INSTRUCTION}\n\nINTERACTIVE VOICE MODE: You are on a phone call. BE EXTREMELY BRIEF (1-2 sentences max). Be conversational and professional. NO LISTS. NO BULLET POINTS. Speak naturally like a human on a call. Respond in the same language as the user.`
           : SYSTEM_INSTRUCTION;
 
       const modelConfig = { 
@@ -1305,11 +1377,13 @@ If no speech is detected, return '[No speech detected]'.` }
         tools: [{ functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }]
       };
 
-      addVerificationStep(language === 'en' ? "Scanning Constitution & Statutes..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
-      await new Promise(r => setTimeout(r, 800));
-      
-      addVerificationStep(language === 'en' ? "Verifying statutory references..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
-      await new Promise(r => setTimeout(r, 600));
+      if (!isCallMode) {
+        addVerificationStep(language === 'en' ? "Scanning Constitution & Statutes..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
+        await new Promise(r => setTimeout(r, 800));
+        
+        addVerificationStep(language === 'en' ? "Verifying statutory references..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
+        await new Promise(r => setTimeout(r, 600));
+      }
 
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
@@ -1376,9 +1450,18 @@ If no speech is detected, return '[No speech detected]'.` }
         });
         
       if (isCallMode) {
-        speakText(fullText, assistantMessageId, () => {
-          if (isCallMode) toggleRecording();
-        });
+        const remaining = fullText.trim();
+        if (remaining && !processedSentencesRef.current.has(remaining)) {
+          queueSentence(remaining, assistantMessageId);
+        }
+        
+        // Wait for all sentences to finish speaking before listening again
+        const checkFinished = setInterval(() => {
+          if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
+            clearInterval(checkFinished);
+            if (isCallMode) toggleRecording();
+          }
+        }, 500);
       }
       } else {
         const response = await ai.models.generateContent({
@@ -1424,9 +1507,15 @@ If no speech is detected, return '[No speech detected]'.` }
         updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         
       if (isCallMode) {
-        speakText(assistantMessage.content, assistantMessageId, () => {
-          if (isCallMode) toggleRecording();
-        });
+        queueSentence(fullText, assistantMessageId);
+        
+        // Wait for all sentences to finish speaking before listening again
+        const checkFinished = setInterval(() => {
+          if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
+            clearInterval(checkFinished);
+            if (isCallMode) toggleRecording();
+          }
+        }, 500);
       }
       }
 
