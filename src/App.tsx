@@ -146,65 +146,128 @@ const CallOverlay = ({
   onClose, 
   isRecording, 
   isSpeaking, 
-  language 
+  language,
+  currentVolume,
+  transcription,
+  assistantResponse,
+  isThinking
 }: { 
   onClose: () => void, 
   isRecording: boolean, 
   isSpeaking: boolean, 
-  language: string 
+  language: string,
+  currentVolume: number,
+  transcription: string,
+  assistantResponse: string,
+  isThinking: boolean
 }) => {
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-[#0B0F1A] flex flex-col items-center justify-between p-8 sm:p-12 text-white"
+      className="fixed inset-0 z-[200] bg-[#0B0F1A] flex flex-col items-center justify-between p-8 sm:p-12 text-white overflow-hidden"
     >
-      <div className="w-full flex justify-end">
+      <div className="w-full flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+          <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-widest">Live Call</span>
+        </div>
         <button onClick={onClose} className="p-4 hover:bg-white/10 rounded-full transition-all">
           <X size={32} />
         </button>
       </div>
 
-      <div className="flex flex-col items-center gap-8">
+      <div className="flex flex-col items-center gap-8 w-full">
         <div className="relative">
           <motion.div 
             animate={{ 
-              scale: isRecording || isSpeaking ? [1, 1.2, 1] : 1,
-              opacity: isRecording || isSpeaking ? [0.5, 1, 0.5] : 0.5
+              scale: (isRecording || isSpeaking) ? 1 + (currentVolume / 100) : 1,
+              opacity: (isRecording || isSpeaking) ? 0.3 + (currentVolume / 200) : 0.2
             }}
-            transition={{ repeat: Infinity, duration: 2 }}
+            transition={{ type: "spring", stiffness: 100, damping: 10 }}
             className="absolute inset-0 bg-[#C5A059] rounded-full blur-3xl"
           />
-          <div className="relative w-32 h-32 sm:w-48 sm:h-48 bg-[#1a1f2e] rounded-full flex items-center justify-center border-4 border-[#C5A059]/30 shadow-2xl">
-            <Scale size={64} className="text-[#C5A059]" />
+          <div className="relative w-40 h-40 sm:w-56 sm:h-56 bg-[#1a1f2e] rounded-full flex items-center justify-center border-4 border-[#C5A059]/30 shadow-2xl">
+            <Scale size={80} className={cn(
+              "text-[#C5A059] transition-transform duration-200",
+              (isRecording || isSpeaking) && "scale-110"
+            )} />
           </div>
+          
+          {/* Waveform visualizer */}
+          {(isRecording || isSpeaking) && (
+            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-1 h-12">
+              {[...Array(15)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  animate={{
+                    height: [8, Math.max(8, currentVolume * (1 + Math.sin(i * 0.5)) * 0.5), 8],
+                  }}
+                  transition={{
+                    duration: 0.5,
+                    repeat: Infinity,
+                    delay: i * 0.05,
+                  }}
+                  className="w-1.5 bg-[#C5A059] rounded-full"
+                />
+              ))}
+            </div>
+          )}
         </div>
         
         <div className="text-center space-y-4">
-          <h2 className="text-3xl sm:text-5xl font-display font-bold tracking-tight">
-            {language === 'en' ? 'Statum AI' : language === 'lg' ? 'Statum AI' : 'Statum AI'}
+          <h2 className="text-4xl sm:text-6xl font-display font-bold tracking-tight">
+            Statum AI
           </h2>
-          <p className="text-[#C5A059] font-mono font-bold tracking-[0.2em] uppercase text-sm sm:text-base">
+          <p className="text-[#C5A059] font-mono font-bold tracking-[0.3em] uppercase text-sm sm:text-lg">
             {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
+             isThinking ? (language === 'en' ? 'Thinking...' : 'Alowooza...') :
              isRecording ? (language === 'en' ? 'Listening...' : 'Awuliriza...') : 
              (language === 'en' ? 'Connected' : 'Ayungiddwa')}
           </p>
         </div>
       </div>
 
-      <div className="flex flex-col items-center gap-8 w-full max-w-md">
-        <div className="flex items-center gap-8">
+      <div className="w-full max-w-2xl space-y-8">
+        <div className="bg-white/5 rounded-3xl p-6 sm:p-8 backdrop-blur-md border border-white/10 shadow-2xl">
+          <div className="space-y-6">
+            {transcription && (
+              <div className="space-y-2">
+                <p className="text-[#C5A059] text-[10px] font-bold uppercase tracking-widest opacity-60">You</p>
+                <p className="text-lg sm:text-xl font-medium text-slate-200 line-clamp-2 italic">"{transcription}"</p>
+              </div>
+            )}
+            {assistantResponse && (
+              <div className="space-y-2 pt-4 border-t border-white/5">
+                <p className="text-[#C5A059] text-[10px] font-bold uppercase tracking-widest opacity-60">Statum AI</p>
+                <p className="text-xl sm:text-2xl font-display font-medium text-white leading-tight">
+                  {assistantResponse}
+                </p>
+              </div>
+            )}
+            {isThinking && !assistantResponse && (
+              <div className="flex flex-col items-center py-8 gap-4">
+                <Loader2 size={32} className="text-[#C5A059] animate-spin" />
+                <p className="text-slate-400 text-sm font-medium">Processing your request...</p>
+              </div>
+            )}
+            {!transcription && !assistantResponse && !isThinking && (
+              <p className="text-center text-slate-500 font-medium animate-pulse py-8">
+                {language === 'en' ? 'Speak naturally, I am listening...' : 'Yogera mu ngeri ey\'obulijjo, nkuwuliriza...'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-center">
           <button 
             onClick={onClose}
-            className="w-16 h-16 sm:w-20 sm:h-20 bg-red-500 rounded-full flex items-center justify-center shadow-2xl shadow-red-500/40 hover:bg-red-600 transition-all active:scale-95"
+            className="w-20 h-20 sm:w-24 sm:h-24 bg-red-500 rounded-full flex items-center justify-center shadow-2xl shadow-red-500/40 hover:bg-red-600 transition-all active:scale-90 group"
           >
-            <Smartphone size={32} className="rotate-[135deg]" />
+            <Smartphone size={40} className="rotate-[135deg] group-hover:scale-110 transition-transform" />
           </button>
         </div>
-        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest text-center">
-          {language === 'en' ? 'Interactive Voice Mode' : 'Enkola y\'eddoboozi ey\'omulala'}
-        </p>
       </div>
     </motion.div>
   );
@@ -256,6 +319,8 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [isCallMode, setIsCallMode] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [currentVolume, setCurrentVolume] = useState(0);
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const speakQueueRef = useRef<string[]>([]);
   const isSpeakingQueueRef = useRef(false);
   const sentenceBufferRef = useRef("");
@@ -571,6 +636,65 @@ export default function App() {
 
       mediaRecorder.start(1000); // 1s chunks for better stability
       setIsRecording(true);
+
+      if (isCallMode) {
+        setInput("");
+        setStreamingContent({});
+      }
+
+      // VAD / Volume Visualizer
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const audioContext = audioContextRef.current;
+      if (audioContext.state === 'suspended') await audioContext.resume();
+
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      const checkSilence = () => {
+        if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
+          setCurrentVolume(0);
+          return;
+        }
+        
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        setCurrentVolume(average);
+        
+        if (isCallMode) {
+          if (average < 8) { // Silence threshold
+            if (!silenceTimeoutRef.current) {
+              silenceTimeoutRef.current = setTimeout(() => {
+                console.log("Statum AI: Silence detected, stopping recording...");
+                stopRecording();
+              }, 1800); // 1.8s of silence
+            }
+          } else {
+            if (silenceTimeoutRef.current) {
+              clearTimeout(silenceTimeoutRef.current);
+              silenceTimeoutRef.current = null;
+            }
+          }
+        }
+        
+        requestAnimationFrame(checkSilence);
+      };
+      checkSilence();
+
+      // Interruption: If user starts speaking while AI is talking, stop AI
+      if (isSpeaking) {
+        stopSpeaking();
+      }
     } catch (err: any) {
       console.error("Error accessing microphone:", err);
       if (stream) {
@@ -629,6 +753,10 @@ export default function App() {
   };
 
   const stopRecording = () => {
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
@@ -761,6 +889,7 @@ If no speech is detected, return '[No speech detected]'.` }
       if (!transcriptionResponse) throw new Error("Transcription failed");
 
       const transcribedText = transcriptionResponse.text?.trim() || (language === 'en' ? "[Transcription failed]" : language === 'lg' ? "[Okukyusa kulemye]" : "[Okuhandiika kuremwa]");
+      setInput(transcribedText);
       
       // 5. Update user message with transcribed text
       updateSessionMessages(prev => prev.map(m => m.id === userMessageId ? { ...m, content: transcribedText } : m));
@@ -2200,14 +2329,18 @@ If no speech is detected, return '[No speech detected]'.` }
       <AnimatePresence>
         {isCallMode && (
           <CallOverlay 
-            language={language}
-            isRecording={isRecording}
-            isSpeaking={!!isSpeaking}
             onClose={() => {
               setIsCallMode(false);
               stopSpeaking();
               if (isRecording) stopRecording();
             }}
+            isRecording={isRecording}
+            isSpeaking={!!isSpeaking}
+            language={language}
+            currentVolume={currentVolume}
+            transcription={input || ""}
+            assistantResponse={Object.values(streamingContent)[0] || ""}
+            isThinking={isLoading && !isSpeaking && !isRecording}
           />
         )}
       </AnimatePresence>
