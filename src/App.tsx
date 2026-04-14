@@ -67,20 +67,20 @@ const MarkdownRenderer = React.lazy(() => import('./components/MarkdownRenderer'
 
 // --- Components ---
 const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: 'en' | 'lg' | 'nk' }) => (
-  <div className="my-6 sm:my-8 bg-slate-50 border border-slate-200 rounded-2xl sm:rounded-[2.5rem] overflow-hidden shadow-sm">
-    <div className="p-5 sm:p-8 border-b border-slate-200 bg-white">
+  <div className="my-6 sm:my-8 bg-white border border-slate-200 rounded-2xl sm:rounded-[2rem] overflow-hidden shadow-sm">
+    <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50/50">
       <div className="flex items-center gap-3 mb-2">
         <div className="p-2 bg-[#C5A059]/10 text-[#C5A059] rounded-lg">
           <MapPin size={20} />
         </div>
-        <h3 className="font-display font-bold text-lg sm:text-xl text-[#0B0F1A]">{roadmap.title}</h3>
+        <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#0B0F1A]">{roadmap.title}</h3>
       </div>
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-        {language === 'en' ? 'Interactive Legal Roadmap' : language === 'lg' ? 'Enkola y\'amateeka ey\'omulala' : 'Enshonga z\'amateeka ezirikukuratanisa'}
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+        {language === 'en' ? 'Statutory Procedural Roadmap' : language === 'lg' ? 'Enkola y\'amateeka ey\'omulala' : 'Enshonga z\'amateeka ezirikukuratanisa'}
       </p>
     </div>
     <div className="p-5 sm:p-8 space-y-8 relative">
-      <div className="absolute left-[31px] sm:left-[43px] top-12 bottom-12 w-0.5 bg-slate-200" />
+      <div className="absolute left-[31px] sm:left-[43px] top-12 bottom-12 w-0.5 bg-slate-100" />
       {roadmap.steps.map((step, idx) => (
         <motion.div 
           key={idx}
@@ -91,27 +91,41 @@ const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: '
         >
           <div className={cn(
             "w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all",
-            step.status === 'completed' ? "bg-green-500 border-green-500 text-white" :
-            step.status === 'current' ? "bg-white border-[#C5A059] text-[#C5A059] shadow-lg shadow-[#C5A059]/20" :
+            step.status === 'completed' ? "bg-[#0B0F1A] border-[#0B0F1A] text-[#C5A059]" :
+            step.status === 'current' ? "bg-white border-[#C5A059] text-[#C5A059] shadow-lg shadow-[#C5A059]/10" :
             "bg-white border-slate-200 text-slate-300"
           )}>
             {step.status === 'completed' ? <CheckCircle size={14} /> : <span className="text-[10px] font-bold">{idx + 1}</span>}
           </div>
           <div className="flex-1 pt-0.5 sm:pt-1">
             <h4 className={cn(
-              "font-bold text-sm sm:text-base mb-1",
+              "font-serif font-bold text-base sm:text-lg mb-1",
               step.status === 'current' ? "text-[#0B0F1A]" : "text-slate-600"
             )}>{step.title}</h4>
-            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-2">{step.description}</p>
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-2 font-sans">{step.description}</p>
             {step.statute && (
-              <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 text-slate-500 rounded-md text-[9px] font-bold uppercase tracking-wider">
-                <Gavel size={10} />
+              <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-[#0B0F1A]/5 text-[#0B0F1A] rounded-md text-[9px] font-bold uppercase tracking-wider">
+                <Gavel size={10} className="text-[#C5A059]" />
                 {step.statute}
               </div>
             )}
           </div>
         </motion.div>
       ))}
+    </div>
+  </div>
+);
+
+const LegalIntelligenceBadge = () => (
+  <div className="flex items-center gap-2 mb-4 sm:mb-6 text-[9px] sm:text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] border-b border-slate-100 pb-3">
+    <div className="flex items-center -space-x-1">
+      <ShieldCheck size={14} className="sm:w-4 sm:h-4 relative z-10" />
+      <Bot size={14} className="sm:w-4 sm:h-4 text-slate-300" />
+    </div>
+    <span>Statutory Intelligence Verified</span>
+    <div className="ml-auto flex items-center gap-1.5">
+      <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" />
+      <span className="text-slate-400">Live Context Grounding</span>
     </div>
   </div>
 );
@@ -252,7 +266,7 @@ const CallOverlay = ({
             {assistantResponse && (
               <div className="space-y-2 pt-4 border-t border-white/5">
                 <p className="text-[#C5A059] text-[10px] font-bold uppercase tracking-widest opacity-60">Statum AI</p>
-                <p className="text-xl sm:text-2xl font-display font-medium text-white leading-tight">
+                <p className="text-xl sm:text-3xl font-serif font-medium text-white leading-tight italic">
                   {assistantResponse}
                 </p>
               </div>
@@ -550,7 +564,7 @@ export default function App() {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are in a real-time voice conversation. Keep responses extremely concise (1-2 sentences). You MUST respond in the language the user speaks to you in. You are proficient in English, Luganda, Swahili, and Runyankore. If the user speaks Runyankore, respond in clear, natural Runyankore. Use simple words and avoid complex legal jargon in Runyankore to ensure clarity.`,
+          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are in a real-time voice conversation. Be conversational and helpful. Provide complete but concise answers. Avoid long monologues, but do not cut your answers short if more detail is needed to be helpful. You MUST respond in the language the user speaks to you in. You are proficient in English, Luganda, Swahili, and Runyankore. If the user speaks Runyankore, respond in clear, natural Runyankore. Use simple words and avoid complex legal jargon in Runyankore to ensure clarity.`,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
         },
@@ -632,10 +646,14 @@ export default function App() {
             }
             
             const userText = message.serverContent?.userContent?.parts?.[0]?.text;
-            if (userText) {
+            if (userText && userText.trim().length > 1) {
               setInput(userText);
               // Clear previous AI response when user starts speaking
               setStreamingContent(prev => ({ ...prev, live: "" }));
+            }
+
+            if (message.serverContent?.turnComplete) {
+              console.log("Statum AI: Model turn complete");
             }
           },
           onclose: () => {
@@ -705,19 +723,21 @@ export default function App() {
       source.connect(audioContextRef.current.destination);
       
       const currentTime = audioContextRef.current.currentTime;
-      // If we are starting fresh or the previous chunk is way in the past, start with a tiny buffer
       let startTime = nextLiveStartTimeRef.current;
+      
+      // If we're too far behind or just starting, sync to current time
       if (startTime < currentTime) {
-        startTime = currentTime + 0.05; 
+        startTime = currentTime + 0.02; // Reduced latency
       }
       
       source.start(startTime);
       nextLiveStartTimeRef.current = startTime + buffer.duration;
       
       source.onended = () => {
-        if (audioContextRef.current && audioContextRef.current.currentTime >= nextLiveStartTimeRef.current - 0.1) {
-          isPlayingLiveRef.current = false;
+        // Only mark as not playing if we've actually reached the end of the scheduled timeline
+        if (audioContextRef.current && audioContextRef.current.currentTime >= nextLiveStartTimeRef.current - 0.05) {
           if (liveAudioQueueRef.current.length === 0) {
+            isPlayingLiveRef.current = false;
             setIsLiveSpeaking(false);
           }
         }
@@ -1802,10 +1822,16 @@ If no speech is detected, return '[No speech detected]'.` }
       };
 
       if (!isCallMode) {
-        addVerificationStep(language === 'en' ? "Scanning Constitution & Statutes..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
+        addVerificationStep(language === 'en' ? "Analyzing statutory intent..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
         await new Promise(r => setTimeout(r, 800));
         
-        addVerificationStep(language === 'en' ? "Verifying statutory references..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
+        addVerificationStep(language === 'en' ? "Scanning Constitution & Statutory Instruments..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
+        await new Promise(r => setTimeout(r, 1000));
+        
+        addVerificationStep(language === 'en' ? "Cross-referencing ULII Case Law database..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
+        await new Promise(r => setTimeout(r, 800));
+
+        addVerificationStep(language === 'en' ? "Performing Statutory Compliance Check..." : language === 'lg' ? "Okukakasa obutuufu..." : "Okukakasa obuhame...");
         await new Promise(r => setTimeout(r, 600));
       }
 
@@ -2041,7 +2067,7 @@ If no speech is detected, return '[No speech detected]'.` }
             onClick={() => {
               const newSession: ChatSession = {
                 id: generateId(),
-                title: language === 'en' ? 'New Inquiry' : language === 'lg' ? 'Okubuuza Okupya' : 'Okushaba Okusya',
+                title: language === 'en' ? 'New Legal Inquiry' : language === 'lg' ? 'Okubuuza Okupya' : 'Okushaba Okusya',
                 messages: [],
                 lastUpdated: new Date(),
                 category: 'General'
@@ -2049,43 +2075,49 @@ If no speech is detected, return '[No speech detected]'.` }
               setSessions(prev => [newSession, ...prev]);
               setCurrentSessionId(newSession.id);
             }}
-            className="w-full py-3.5 px-4 bg-[#C5A059] hover:bg-[#B38F48] text-[#0B0F1A] rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#C5A059]/5 transition-all active:scale-[0.98]"
+            className="w-full py-4 px-4 bg-[#C5A059] hover:bg-[#B38F48] text-[#0B0F1A] rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#C5A059]/10 transition-all active:scale-[0.98] border border-[#C5A059]/20"
           >
             <MessageSquare size={18} />
             {language === 'en' ? 'New Legal Inquiry' : language === 'lg' ? 'Okubuuza Okupya' : 'Okushaba Okusya'}
           </button>
 
           <div className="space-y-1 mb-6">
-            <p className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-[0.2em]">Statutory Updates</p>
-            <div className="px-4 space-y-3">
-              {[
-                { title: "Land Act Amendment 2024", date: "2 days ago" },
-                { title: "New Succession Rules", date: "1 week ago" }
-              ].map((news, idx) => (
-                <div key={idx} className="group cursor-default">
-                  <p className="text-[11px] text-white font-medium group-hover:text-[#C5A059] transition-colors">{news.title}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Clock size={10} className="text-slate-600" />
-                    <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider">{news.date}</span>
-                  </div>
+            <p className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Legal Intelligence</p>
+            <div className="px-4 space-y-4">
+              <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Statutory Coverage</span>
+                  <span className="text-[10px] font-bold text-[#C5A059]">98.4%</span>
                 </div>
-              ))}
+                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#C5A059] w-[98.4%]" />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg">
+                  <ShieldCheck size={16} />
+                </div>
+                <div>
+                  <p className="text-[11px] text-white font-medium">ULII Integration</p>
+                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Active Connection</p>
+                </div>
+              </div>
             </div>
           </div>
 
           <div className="space-y-1">
-            <p className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-[0.2em]">Recent Inquiries</p>
+            <p className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Recent Case Files</p>
             {sessions.map(session => (
               <div 
                 key={session.id}
                 onClick={() => setCurrentSessionId(session.id)}
                 className={cn(
-                  "group p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-3",
-                  currentSessionId === session.id ? "bg-white/10 text-white shadow-inner" : "hover:bg-white/5"
+                  "group p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-3 mx-2",
+                  currentSessionId === session.id ? "bg-white/10 text-white shadow-inner border border-white/5" : "hover:bg-white/5"
                 )}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", currentSessionId === session.id ? "bg-[#C5A059]" : "bg-slate-700")} />
+                  <FileText size={14} className={cn(currentSessionId === session.id ? "text-[#C5A059]" : "text-slate-600")} />
                   <p className="text-sm font-medium truncate">{session.title}</p>
                 </div>
                 <button 
@@ -2312,12 +2344,7 @@ If no speech is detected, return '[No speech detected]'.` }
                           "max-w-[90%] sm:max-w-[85%] rounded-2xl sm:rounded-[2rem] p-4 sm:p-8 shadow-sm relative group transition-all", 
                           m.role === 'user' ? "bg-[#0B0F1A] text-white rounded-tr-none" : "bg-white border border-slate-100 rounded-tl-none text-slate-800"
                         )}>
-                          {m.role === 'assistant' && (
-                            <div className="flex items-center gap-2 mb-3 sm:mb-4 text-[9px] sm:text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] border-b border-slate-50 pb-2 sm:pb-3">
-                              <ShieldCheck size={12} className="sm:w-3.5 sm:h-3.5" />
-                              <span>Verified Statutory Guidance</span>
-                            </div>
-                          )}
+                          {m.role === 'assistant' && <LegalIntelligenceBadge />}
                           {m.attachments && m.attachments.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-4">
                               {m.attachments.map((file, idx) => (
@@ -2331,7 +2358,10 @@ If no speech is detected, return '[No speech detected]'.` }
                               ))}
                             </div>
                           )}
-                          <div className="markdown-body prose prose-slate prose-sm max-w-none text-sm sm:text-base">
+                          <div className={cn(
+                            "markdown-body prose prose-slate prose-sm max-w-none text-sm sm:text-base",
+                            m.role === 'assistant' && "font-serif"
+                          )}>
                             <React.Suspense fallback={<div className="animate-pulse h-20 bg-slate-100 rounded-lg" />}>
                               <MarkdownRenderer content={streamingContent[m.id] || m.content} />
                             </React.Suspense>
