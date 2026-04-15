@@ -662,7 +662,7 @@ export default function App() {
       Respond in the user's language. Use simple words for clarity.`;
 
       const session = await ai.live.connect({
-        model: "gemini-2.0-flash-exp",
+        model: "gemini-3.1-flash-live-preview",
         config: {
           responseModalities: [Modality.AUDIO],
           tools: [{ googleSearch: {} }],
@@ -1920,7 +1920,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
-          model: "gemini-2.0-flash-exp",
+          model: "gemini-3-flash-preview",
           contents: promptMessages.map(m => {
             const parts: any[] = [];
             if (m.attachments) {
@@ -1998,7 +1998,7 @@ If no speech is detected, return '[No speech detected]'.` }
       }
       } else {
         const response = await ai.models.generateContent({
-          model: "gemini-2.0-flash-exp",
+          model: "gemini-3-flash-preview",
           contents: promptMessages.map(m => {
             const parts: any[] = [];
             if (m.attachments) {
