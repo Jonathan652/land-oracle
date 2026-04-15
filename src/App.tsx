@@ -551,12 +551,14 @@ export default function App() {
       console.log("Statum AI: Connecting to Live API...");
       setIsLoading(true);
       setIsLiveActive(true);
-      setInput(""); // Clear previous input/transcription
+      setInput(""); 
       setStreamingContent(prev => ({ ...prev, live: "" }));
       
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
+      
+      // Force resume on every start attempt
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
@@ -564,6 +566,13 @@ export default function App() {
       const ai = getAI();
       const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
       
+      // Streamlined instruction to avoid token limits
+      const liveInstruction = `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: Be conversational, authoritative, and helpful. 
+      LUGANDA vs RUNYANKORE: 
+      - LUGANDA: Greetings like "Otyanno". Uses "L" (e.g. "Bulungi").
+      - RUNYANKORE: Greetings like "Agandi". Uses "R" (e.g. "Kurungi").
+      Respond in the user's language. Use simple words for clarity.`;
+
       const session = await ai.live.connect({
         model: "gemini-3.1-flash-live-preview",
         config: {
@@ -572,17 +581,7 @@ export default function App() {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are in a real-time voice conversation. Be conversational, authoritative, and helpful. Provide complete but concise legal intelligence. 
-          
-          LANGUAGE DIFFERENTIATION PROTOCOL:
-          - You MUST respond in the language the user speaks to you in.
-          - LUGANDA vs RUNYANKORE: These are distinct. 
-            * LUGANDA (Central): Greetings like "Otyanno", "Wasuze otyanno". Uses "L" frequently (e.g., "Bulungi").
-            * RUNYANKORE (Western): Greetings like "Agandi", "Oraire ota". Uses "R" frequently (e.g., "Kurungi").
-            * If you hear "Agandi", "Eego", or "Ka" (as an affirmative), prioritize RUNYANKORE.
-            * If you hear "Otyanno", "Kale", or "Ee", prioritize LUGANDA.
-          - If the user speaks Runyankore, respond in clear, natural Runyankore. Use simple words for clarity but maintain legal precision.
-          - Current UI Language Hint: ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}.`,
+          systemInstruction: liveInstruction,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
         },
@@ -591,46 +590,72 @@ export default function App() {
             console.log("Statum AI: Live session opened");
             setIsLoading(false);
             
-            // Setup Microphone Stream
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            liveStreamRef.current = stream;
-            
-            const source = audioContextRef.current!.createMediaStreamSource(stream);
-            const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
-            processorNodeRef.current = processor;
-            
-            source.connect(processor);
-            processor.connect(audioContextRef.current!.destination);
-            
-            processor.onaudioprocess = (e) => {
-              const inputData = e.inputBuffer.getChannelData(0);
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              liveStreamRef.current = stream;
               
-              // Downsample to 16kHz and convert to 16-bit PCM
-              const ratio = audioContextRef.current!.sampleRate / 16000;
-              const newLength = Math.floor(inputData.length / ratio);
-              const pcmData = new Int16Array(newLength);
-              
-              for (let i = 0; i < newLength; i++) {
-                const index = Math.floor(i * ratio);
-                pcmData[i] = Math.max(-1, Math.min(1, inputData[index])) * 0x7FFF;
+              if (audioContextRef.current?.state === 'suspended') {
+                await audioContextRef.current.resume();
               }
+
+              const source = audioContextRef.current!.createMediaStreamSource(stream);
               
-              // Calculate volume for visualizer
-              let sum = 0;
-              for (let i = 0; i < inputData.length; i++) {
-                sum += inputData[i] * inputData[i];
-              }
-              const volume = Math.sqrt(sum / inputData.length) * 100;
-              setCurrentVolume(volume);
+              // Use AnalyserNode for more reliable volume visualization
+              const analyser = audioContextRef.current!.createAnalyser();
+              analyser.fftSize = 256;
+              source.connect(analyser);
               
-              // Send to Gemini only if there's significant sound (noise gate)
-              if (volume > 0.5) {
-                const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
-                session.sendRealtimeInput({
+              const dataArray = new Uint8Array(analyser.frequencyBinCount);
+              const updateVolume = () => {
+                if (!liveSessionRef.current) return;
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                  sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+                // Scale volume for better visualization
+                setCurrentVolume(Math.min(100, average * 1.5));
+                requestAnimationFrame(updateVolume);
+              };
+              updateVolume();
+
+              const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
+              processorNodeRef.current = processor;
+              
+              source.connect(processor);
+              processor.connect(audioContextRef.current!.destination);
+              
+              processor.onaudioprocess = (e) => {
+                if (!liveSessionRef.current) return;
+                
+                const inputData = e.inputBuffer.getChannelData(0);
+                const ratio = audioContextRef.current!.sampleRate / 16000;
+                const newLength = Math.floor(inputData.length / ratio);
+                const pcmData = new Int16Array(newLength);
+                
+                for (let i = 0; i < newLength; i++) {
+                  const index = Math.floor(i * ratio);
+                  pcmData[i] = Math.max(-1, Math.min(1, inputData[index])) * 0x7FFF;
+                }
+                
+                // Send to Gemini
+                const uint8 = new Uint8Array(pcmData.buffer);
+                let binary = "";
+                for (let i = 0; i < uint8.length; i++) {
+                  binary += String.fromCharCode(uint8[i]);
+                }
+                const base64Data = btoa(binary);
+                
+                liveSessionRef.current.sendRealtimeInput({
                   audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
                 });
-              }
-            };
+              };
+            } catch (micErr) {
+              console.error("Statum AI: Mic access error:", micErr);
+              setVoiceError("Microphone access denied. Please check permissions.");
+              stopLiveSession();
+            }
           },
           onmessage: async (message: any) => {
             // Handle Audio Output
@@ -2264,7 +2289,15 @@ If no speech is detected, return '[No speech detected]'.` }
 
           <div className="flex items-center gap-1 sm:gap-2">
             <button 
-              onClick={() => {
+              onClick={async () => {
+                // Initialize AudioContext on user gesture
+                if (!audioContextRef.current) {
+                  audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+                }
+                if (audioContextRef.current.state === 'suspended') {
+                  await audioContextRef.current.resume();
+                }
+                
                 setIsCallMode(!isCallMode);
                 if (!isCallMode) {
                   // Start recording automatically when entering call mode
@@ -2685,7 +2718,6 @@ If no speech is detected, return '[No speech detected]'.` }
       )}
     </main>
 
-      {/* Call Mode Overlay */}
       <AnimatePresence>
         {isCallMode && (
           <CallOverlay 
