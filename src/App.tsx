@@ -239,11 +239,11 @@ const CallOverlay = ({
             Statum AI
           </h2>
           <p className="text-[#C5A059] font-mono font-bold tracking-[0.3em] uppercase text-sm sm:text-lg">
-            {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
-             isThinking ? (language === 'en' ? 'Connecting...' : 'Ayungibwa...') :
-             isTranscribing ? (language === 'en' ? 'Transcribing...' : 'Nkyusa eddoboozi...') :
-             isRecording ? (language === 'en' ? 'Listening...' : 'Awuliriza...') : 
-             (language === 'en' ? 'Connected' : 'Ayungiddwa')}
+            {isSpeaking ? (language === 'en' ? 'Speaking...' : language === 'lg' ? 'Ayogera...' : 'Naagamba...') : 
+             isThinking ? (language === 'en' ? 'Connecting...' : language === 'lg' ? 'Ayungibwa...' : 'Naakwatana...') :
+             isTranscribing ? (language === 'en' ? 'Transcribing...' : language === 'lg' ? 'Nkyusa eddoboozi...' : 'Naakyusa eiraka...') :
+             isRecording ? (language === 'en' ? 'Listening...' : language === 'lg' ? 'Awuliriza...' : 'Nahurira...') : 
+             (language === 'en' ? 'Connected' : language === 'lg' ? 'Ayungiddwa' : 'Naakwatana')}
           </p>
         </div>
       </div>
@@ -286,6 +286,10 @@ const CallOverlay = ({
         </div>
 
         <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#C5A059]/10 text-[#C5A059] rounded-full border border-[#C5A059]/20 mb-2">
+            <ShieldCheck size={14} />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Statutory Grounding Active</span>
+          </div>
           <button 
             onClick={onClose}
             className="w-20 h-20 sm:w-24 sm:h-24 bg-red-500 rounded-full flex items-center justify-center shadow-2xl shadow-red-500/40 hover:bg-red-600 transition-all active:scale-90 group"
@@ -456,6 +460,7 @@ export default function App() {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const liveActiveSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const isSpeakingCancelledRef = useRef(false);
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
@@ -546,6 +551,8 @@ export default function App() {
       console.log("Statum AI: Connecting to Live API...");
       setIsLoading(true);
       setIsLiveActive(true);
+      setInput(""); // Clear previous input/transcription
+      setStreamingContent(prev => ({ ...prev, live: "" }));
       
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -561,10 +568,21 @@ export default function App() {
         model: "gemini-3.1-flash-live-preview",
         config: {
           responseModalities: [Modality.AUDIO],
+          tools: [{ googleSearch: {} }],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are in a real-time voice conversation. Be conversational and helpful. Provide complete but concise answers. Avoid long monologues, but do not cut your answers short if more detail is needed to be helpful. You MUST respond in the language the user speaks to you in. You are proficient in English, Luganda, Swahili, and Runyankore. If the user speaks Runyankore, respond in clear, natural Runyankore. Use simple words and avoid complex legal jargon in Runyankore to ensure clarity.`,
+          systemInstruction: `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: You are in a real-time voice conversation. Be conversational, authoritative, and helpful. Provide complete but concise legal intelligence. 
+          
+          LANGUAGE DIFFERENTIATION PROTOCOL:
+          - You MUST respond in the language the user speaks to you in.
+          - LUGANDA vs RUNYANKORE: These are distinct. 
+            * LUGANDA (Central): Greetings like "Otyanno", "Wasuze otyanno". Uses "L" frequently (e.g., "Bulungi").
+            * RUNYANKORE (Western): Greetings like "Agandi", "Oraire ota". Uses "R" frequently (e.g., "Kurungi").
+            * If you hear "Agandi", "Eego", or "Ka" (as an affirmative), prioritize RUNYANKORE.
+            * If you hear "Otyanno", "Kale", or "Ee", prioritize LUGANDA.
+          - If the user speaks Runyankore, respond in clear, natural Runyankore. Use simple words for clarity but maintain legal precision.
+          - Current UI Language Hint: ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}.`,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
         },
@@ -605,11 +623,13 @@ export default function App() {
               const volume = Math.sqrt(sum / inputData.length) * 100;
               setCurrentVolume(volume);
               
-              // Send to Gemini
-              const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
-              session.sendRealtimeInput({
-                audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
-              });
+              // Send to Gemini only if there's significant sound (noise gate)
+              if (volume > 0.5) {
+                const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+                session.sendRealtimeInput({
+                  audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
+                });
+              }
             };
           },
           onmessage: async (message: any) => {
@@ -732,8 +752,10 @@ export default function App() {
       
       source.start(startTime);
       nextLiveStartTimeRef.current = startTime + buffer.duration;
+      liveActiveSourcesRef.current.push(source);
       
       source.onended = () => {
+        liveActiveSourcesRef.current = liveActiveSourcesRef.current.filter(s => s !== source);
         // Only mark as not playing if we've actually reached the end of the scheduled timeline
         if (audioContextRef.current && audioContextRef.current.currentTime >= nextLiveStartTimeRef.current - 0.05) {
           if (liveAudioQueueRef.current.length === 0) {
@@ -747,6 +769,15 @@ export default function App() {
 
   const stopLiveAudio = () => {
     liveAudioQueueRef.current = [];
+    liveActiveSourcesRef.current.forEach(source => {
+      try {
+        source.stop();
+        source.disconnect();
+      } catch (e) {
+        // Source might have already stopped
+      }
+    });
+    liveActiveSourcesRef.current = [];
     isPlayingLiveRef.current = false;
     setIsLiveSpeaking(false);
     nextLiveStartTimeRef.current = 0;
@@ -762,7 +793,7 @@ export default function App() {
       stopLiveSession();
     }
     return () => stopLiveSession();
-  }, [isCallMode]);
+  }, [isCallMode, language]);
 
   const startRecording = async () => {
     if (isRecording || isTranscribing) return;
@@ -1816,9 +1847,13 @@ If no speech is detected, return '[No speech detected]'.` }
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
-        temperature: 0.4,
+        temperature: 0.1, // Lower temperature for maximum statutory accuracy
         maxOutputTokens: 2048,
-        tools: [{ functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }]
+        tools: [
+          { googleSearch: {} }, // Enable real-time statutory grounding via Google Search
+          { functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }
+        ],
+        toolConfig: { includeServerSideToolInvocations: true }
       };
 
       if (!isCallMode) {
@@ -2663,7 +2698,7 @@ If no speech is detected, return '[No speech detected]'.` }
             currentVolume={currentVolume}
             transcription={input || ""}
             assistantResponse={streamingContent.live || ""}
-            isThinking={isLoading}
+            isThinking={isLoading || (input.length > 0 && !isLiveSpeaking && streamingContent.live === "")}
             isTranscribing={false}
             error={voiceError}
           />
