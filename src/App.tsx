@@ -50,7 +50,8 @@ import {
   AlertTriangle,
   ArrowUpRight,
   CheckCircle,
-  Camera
+  Camera,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
@@ -361,6 +362,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [isEmailVerifying, setIsEmailVerifying] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isCallMode, setIsCallMode] = useState(false);
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [isLiveSpeaking, setIsLiveSpeaking] = useState(false);
@@ -2491,6 +2493,29 @@ If no speech is detected, return '[No speech detected]'.` }
                               {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </div>
                             <div className="flex items-center gap-2">
+                              <button 
+                                onClick={async () => {
+                                  const text = streamingContent[m.id] || m.content;
+                                  try {
+                                    await navigator.clipboard.writeText(text);
+                                    setCopiedId(m.id);
+                                    setTimeout(() => setCopiedId(null), 2000);
+                                  } catch (err) {
+                                    console.error('Failed to copy text: ', err);
+                                  }
+                                }}
+                                className={cn(
+                                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all",
+                                  copiedId === m.id 
+                                    ? "bg-green-500/10 text-green-600" 
+                                    : m.role === 'user' ? "bg-white/10 text-white/60 hover:bg-white/20" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                )}
+                              >
+                                {copiedId === m.id ? <CheckCircle size={12} /> : <Copy size={12} />}
+                                {copiedId === m.id 
+                                  ? (language === 'en' ? 'Copied' : language === 'lg' ? 'Koppiddwa' : 'Koppiddwa')
+                                  : (language === 'en' ? 'Copy' : language === 'lg' ? 'Koppya' : 'Koppya')}
+                              </button>
                               <button 
                                 onClick={() => {
                                   const text = streamingContent[m.id] || m.content;
