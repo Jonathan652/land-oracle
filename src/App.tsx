@@ -200,8 +200,12 @@ const CallOverlay = ({
         <div className="relative">
           <motion.div 
             animate={{ 
-              scale: (isRecording || isSpeaking || isThinking || isTranscribing) ? 1 + (currentVolume / 100) + (isThinking || isTranscribing ? 0.1 : 0) : 1,
-              opacity: (isRecording || isSpeaking || isThinking || isTranscribing) ? 0.3 + (currentVolume / 200) + (isThinking || isTranscribing ? 0.2 : 0) : 0.2
+              scale: (isRecording || isSpeaking || isThinking || isTranscribing) 
+                ? 1 + (currentVolume / 100) + (isThinking || isTranscribing ? 0.1 : 0) + (isRecording ? 0.05 : 0) 
+                : 1,
+              opacity: (isRecording || isSpeaking || isThinking || isTranscribing) 
+                ? 0.3 + (currentVolume / 200) + (isThinking || isTranscribing ? 0.2 : 0) 
+                : 0.2
             }}
             transition={{ type: "spring", stiffness: 100, damping: 10 }}
             className="absolute inset-0 bg-[#C5A059] rounded-full blur-3xl"
@@ -579,24 +583,33 @@ export default function App() {
         
         const source = audioContextRef.current.createMediaStreamSource(stream);
         const analyser = audioContextRef.current.createAnalyser();
-        analyser.fftSize = 512;
+        analyser.fftSize = 256;
         source.connect(analyser);
         
         const dataArray = new Uint8Array(analyser.fftSize);
         const updateVolume = () => {
-          if (!liveStreamRef.current) return;
+          if (!liveStreamRef.current || !audioContextRef.current) return;
+          
+          // Ensure context is running
+          if (audioContextRef.current.state === 'suspended') {
+            audioContextRef.current.resume();
+          }
+
           analyser.getByteTimeDomainData(dataArray);
+          
+          // Calculate RMS volume from time domain data
           let sum = 0;
           for (let i = 0; i < dataArray.length; i++) {
             const val = (dataArray[i] - 128) / 128;
             sum += val * val;
           }
           const rms = Math.sqrt(sum / dataArray.length);
-          if (rms > 0.001) {
-            // Only log occasionally to avoid flooding
-            if (Math.random() > 0.95) console.log("Statum AI: Audio detected, RMS:", rms.toFixed(4));
+          const volume = Math.min(100, rms * 500);
+          
+          if (volume > 1 && Math.random() > 0.99) {
+            console.log("Statum AI: Audio detected (RMS):", volume.toFixed(2));
           }
-          const volume = Math.min(100, rms * 1000); // Increased sensitivity
+          
           setCurrentVolume(volume);
           requestAnimationFrame(updateVolume);
         };
@@ -649,7 +662,7 @@ export default function App() {
       Respond in the user's language. Use simple words for clarity.`;
 
       const session = await ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
+        model: "gemini-2.0-flash-exp",
         config: {
           responseModalities: [Modality.AUDIO],
           tools: [{ googleSearch: {} }],
@@ -745,6 +758,7 @@ export default function App() {
       liveStreamRef.current.getTracks().forEach(t => t.stop());
       liveStreamRef.current = null;
     }
+    liveSessionRef.current = null;
     stopLiveAudio();
     setIsLiveActive(false);
     setIsLoading(false);
@@ -1906,7 +1920,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
       if (isStreamingMode) {
         const stream = await ai.models.generateContentStream({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.0-flash-exp",
           contents: promptMessages.map(m => {
             const parts: any[] = [];
             if (m.attachments) {
@@ -1984,7 +1998,7 @@ If no speech is detected, return '[No speech detected]'.` }
       }
       } else {
         const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.0-flash-exp",
           contents: promptMessages.map(m => {
             const parts: any[] = [];
             if (m.attachments) {
