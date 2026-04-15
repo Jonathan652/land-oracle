@@ -220,7 +220,7 @@ const CallOverlay = ({
                 <motion.div
                   key={i}
                   animate={{
-                    height: [8, Math.max(8, currentVolume * (1 + Math.sin(i * 0.5)) * 0.5), 8],
+                    height: [8, 8 + (currentVolume * (1 + Math.sin(i * 0.5)) * 0.8), 8],
                   }}
                   transition={{
                     duration: 0.5,
@@ -571,10 +571,77 @@ export default function App() {
         await audioContextRef.current.resume();
       }
 
+      // 1. Setup Microphone Stream IMMEDIATELY for visualizer
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        liveStreamRef.current = stream;
+        
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        const analyser = audioContextRef.current.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        
+        const dataArray = new Uint8Array(analyser.fftSize);
+        const updateVolume = () => {
+          if (!liveStreamRef.current) return;
+          analyser.getByteTimeDomainData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            const val = (dataArray[i] - 128) / 128;
+            sum += val * val;
+          }
+          const rms = Math.sqrt(sum / dataArray.length);
+          if (rms > 0.001) {
+            // Only log occasionally to avoid flooding
+            if (Math.random() > 0.95) console.log("Statum AI: Audio detected, RMS:", rms.toFixed(4));
+          }
+          const volume = Math.min(100, rms * 1000); // Increased sensitivity
+          setCurrentVolume(volume);
+          requestAnimationFrame(updateVolume);
+        };
+        updateVolume();
+
+        const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+        processorNodeRef.current = processor;
+        source.connect(processor);
+        processor.connect(audioContextRef.current.destination);
+
+        processor.onaudioprocess = (e) => {
+          if (!liveSessionRef.current) return;
+          
+          const inputData = e.inputBuffer.getChannelData(0);
+          const ratio = audioContextRef.current!.sampleRate / 16000;
+          const newLength = Math.floor(inputData.length / ratio);
+          const pcmData = new Int16Array(newLength);
+          
+          for (let i = 0; i < newLength; i++) {
+            const index = Math.floor(i * ratio);
+            pcmData[i] = Math.max(-1, Math.min(1, inputData[index])) * 0x7FFF;
+          }
+          
+          const uint8 = new Uint8Array(pcmData.buffer);
+          let binary = "";
+          for (let i = 0; i < uint8.length; i++) {
+            binary += String.fromCharCode(uint8[i]);
+          }
+          const base64Data = btoa(binary);
+          
+          liveSessionRef.current.sendRealtimeInput({
+            audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
+          });
+        };
+      } catch (micErr) {
+        console.error("Statum AI: Mic access error:", micErr);
+        setVoiceError("Microphone access denied. Please check permissions.");
+        stopLiveSession();
+        return;
+      }
+
+      // 2. Connect to Gemini Live API
       const ai = getAI();
       const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
       
-      // Streamlined instruction to avoid token limits
       const liveInstruction = `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: Be conversational, authoritative, and helpful. 
       LUGANDA vs RUNYANKORE: 
       - LUGANDA: Greetings like "Otyanno". Uses "L" (e.g. "Bulungi").
@@ -597,73 +664,7 @@ export default function App() {
           onopen: async () => {
             console.log("Statum AI: Live session opened");
             setIsLoading(false);
-            
-            try {
-              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-              liveStreamRef.current = stream;
-              
-              if (audioContextRef.current?.state === 'suspended') {
-                await audioContextRef.current.resume();
-              }
-
-              const source = audioContextRef.current!.createMediaStreamSource(stream);
-              
-              // Use AnalyserNode for more reliable volume visualization
-              const analyser = audioContextRef.current!.createAnalyser();
-              analyser.fftSize = 256;
-              source.connect(analyser);
-              
-              const dataArray = new Uint8Array(analyser.frequencyBinCount);
-              const updateVolume = () => {
-                if (!liveStreamRef.current) return;
-                analyser.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                  sum += dataArray[i];
-                }
-                const average = sum / dataArray.length;
-                // Scale volume for better visualization
-                setCurrentVolume(Math.min(100, average * 2));
-                requestAnimationFrame(updateVolume);
-              };
-              updateVolume();
-
-              const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
-              processorNodeRef.current = processor;
-              
-              source.connect(processor);
-              processor.connect(audioContextRef.current!.destination);
-              
-              processor.onaudioprocess = (e) => {
-                const inputData = e.inputBuffer.getChannelData(0);
-                const ratio = audioContextRef.current!.sampleRate / 16000;
-                const newLength = Math.floor(inputData.length / ratio);
-                const pcmData = new Int16Array(newLength);
-                
-                for (let i = 0; i < newLength; i++) {
-                  const index = Math.floor(i * ratio);
-                  pcmData[i] = Math.max(-1, Math.min(1, inputData[index])) * 0x7FFF;
-                }
-                
-                // Send to Gemini using the session available in closure
-                if (session && session.sendRealtimeInput) {
-                  const uint8 = new Uint8Array(pcmData.buffer);
-                  let binary = "";
-                  for (let i = 0; i < uint8.length; i++) {
-                    binary += String.fromCharCode(uint8[i]);
-                  }
-                  const base64Data = btoa(binary);
-                  
-                  session.sendRealtimeInput({
-                    audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
-                  });
-                }
-              };
-            } catch (micErr) {
-              console.error("Statum AI: Mic access error:", micErr);
-              setVoiceError("Microphone access denied. Please check permissions.");
-              stopLiveSession();
-            }
+            liveSessionRef.current = session;
           },
           onmessage: async (message: any) => {
             // Handle Audio Output
