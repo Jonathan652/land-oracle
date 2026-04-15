@@ -286,9 +286,17 @@ const CallOverlay = ({
         </div>
 
         <div className="flex flex-col items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#C5A059]/10 text-[#C5A059] rounded-full border border-[#C5A059]/20 mb-2">
-            <ShieldCheck size={14} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Statutory Grounding Active</span>
+          <div className="flex items-center gap-4 mb-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#C5A059]/10 text-[#C5A059] rounded-full border border-[#C5A059]/20">
+              <ShieldCheck size={14} />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Statutory Grounding Active</span>
+            </div>
+            {isRecording && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 text-green-500 rounded-full border border-green-500/20 animate-pulse">
+                <Mic size={14} />
+                <span className="text-[10px] font-bold uppercase tracking-widest">Mic Active</span>
+              </div>
+            )}
           </div>
           <button 
             onClick={onClose}
@@ -607,7 +615,7 @@ export default function App() {
               
               const dataArray = new Uint8Array(analyser.frequencyBinCount);
               const updateVolume = () => {
-                if (!liveSessionRef.current) return;
+                if (!liveStreamRef.current) return;
                 analyser.getByteFrequencyData(dataArray);
                 let sum = 0;
                 for (let i = 0; i < dataArray.length; i++) {
@@ -615,7 +623,7 @@ export default function App() {
                 }
                 const average = sum / dataArray.length;
                 // Scale volume for better visualization
-                setCurrentVolume(Math.min(100, average * 1.5));
+                setCurrentVolume(Math.min(100, average * 2));
                 requestAnimationFrame(updateVolume);
               };
               updateVolume();
@@ -627,8 +635,6 @@ export default function App() {
               processor.connect(audioContextRef.current!.destination);
               
               processor.onaudioprocess = (e) => {
-                if (!liveSessionRef.current) return;
-                
                 const inputData = e.inputBuffer.getChannelData(0);
                 const ratio = audioContextRef.current!.sampleRate / 16000;
                 const newLength = Math.floor(inputData.length / ratio);
@@ -639,17 +645,19 @@ export default function App() {
                   pcmData[i] = Math.max(-1, Math.min(1, inputData[index])) * 0x7FFF;
                 }
                 
-                // Send to Gemini
-                const uint8 = new Uint8Array(pcmData.buffer);
-                let binary = "";
-                for (let i = 0; i < uint8.length; i++) {
-                  binary += String.fromCharCode(uint8[i]);
+                // Send to Gemini using the session available in closure
+                if (session && session.sendRealtimeInput) {
+                  const uint8 = new Uint8Array(pcmData.buffer);
+                  let binary = "";
+                  for (let i = 0; i < uint8.length; i++) {
+                    binary += String.fromCharCode(uint8[i]);
+                  }
+                  const base64Data = btoa(binary);
+                  
+                  session.sendRealtimeInput({
+                    audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
+                  });
                 }
-                const base64Data = btoa(binary);
-                
-                liveSessionRef.current.sendRealtimeInput({
-                  audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
-                });
               };
             } catch (micErr) {
               console.error("Statum AI: Mic access error:", micErr);
