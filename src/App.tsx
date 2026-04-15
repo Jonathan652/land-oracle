@@ -2067,8 +2067,34 @@ If no speech is detected, return '[No speech detected]'.` }
       }
     } catch (error: any) {
       console.error(`Oracle Error:`, error);
-      const errorMessage = "Nfuna obuzibu mu kukuddamu.";
-      const assistantError: Message = { id: generateId(), role: 'assistant', content: errorMessage, timestamp: new Date() };
+      let errorMessage = language === 'en' 
+        ? "I'm having trouble replying. Please try again." 
+        : language === 'lg' 
+          ? "Nfuna obuzibu mu kukuddamu." 
+          : "Ninyetegyereza obuzibu omu kukugarukamu.";
+
+      // Check for common cross-device/production errors
+      const errorStr = error?.message || String(error);
+      if (errorStr.includes('API_KEY_INVALID') || errorStr.includes('API key not valid')) {
+        errorMessage = language === 'en'
+          ? "Configuration Error: The Gemini API Key is invalid or missing. Please check your AI Studio Secrets."
+          : "Obuzibu mu nteekateeka: API Key ya Gemini tennaba kuteekebwamu bulungi.";
+      } else if (errorStr.includes('permission-denied') || errorStr.includes('insufficient permissions')) {
+        errorMessage = language === 'en'
+          ? "Security Error: Permission denied. If using a shared link, please ensure this domain is added to 'Authorized Domains' in your Firebase Console."
+          : "Obuzibu mu bukuumi: Olukusa lugaaniddwa. Kakasa nti domain eno eri mu 'Authorized Domains' mu Firebase.";
+      } else if (errorStr.includes('quota') || errorStr.includes('429')) {
+        errorMessage = language === 'en'
+          ? "System Busy: Quota exceeded. Please wait a moment and try again."
+          : "Sisitimu ekoye: Lindako katono oddemu ogezeeko.";
+      }
+
+      const assistantError: Message = { 
+        id: generateId(), 
+        role: 'assistant', 
+        content: errorMessage, 
+        timestamp: new Date() 
+      };
       updateSessionMessages(prev => [...prev, assistantError]);
     }
     setIsLoading(false);
