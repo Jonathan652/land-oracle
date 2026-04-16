@@ -1887,12 +1887,13 @@ If no speech is detected, return '[No speech detected]'.` }
     setIsLoading(true);
     setVerificationSteps([]);
 
+    const assistantMessageId = generateId();
+
     try {
       const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
       const ai = getAI();
       addVerificationStep(language === 'en' ? "Analyzing legal intent..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
       
-      const assistantMessageId = generateId();
       const assistantMessage: Message = {
         id: assistantMessageId,
         role: 'assistant',
@@ -1911,10 +1912,10 @@ If no speech is detected, return '[No speech detected]'.` }
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
-        temperature: 0.1, // Lower temperature for maximum statutory accuracy
-        maxOutputTokens: 2048,
+        temperature: 0.2, // Slightly increased for fluid reasoning
+        maxOutputTokens: 8192, // Increased for pro-level reasoning and thinking
         tools: [
-          { googleSearch: {} }, // Enable real-time statutory grounding via Google Search
+          { googleSearch: {} },
           { functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }
         ],
         toolConfig: { includeServerSideToolInvocations: true }
@@ -1935,7 +1936,7 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       let retryCount = 0;
-      const maxRetries = 3;
+      const maxRetries = 4; // Extra retry for hackathon safety
       let success = false;
       let modelToUse = "gemini-3.1-pro-preview"; // Statum Ultra-Intelligence Brain
 
@@ -1961,13 +1962,11 @@ If no speech is detected, return '[No speech detected]'.` }
             });
 
             let fullText = "";
-            let hasToolCall = false;
 
             addVerificationStep(language === 'en' ? `Engaging Statum ${modelToUse.includes('pro') ? 'Ultra' : modelToUse.includes('flash-preview') ? 'Balanced' : 'Stable'} Brain...` : language === 'lg' ? "Okukozesa obwongo obw'amaanyi..." : "Okukozesa obwongo obuhame...");
 
             for await (const chunk of stream) {
               if (chunk.functionCalls) {
-                hasToolCall = true;
                 for (const call of chunk.functionCalls) {
                   if (call.name === "generateLegalDocument") {
                     const { content, format, title } = call.args as any;
@@ -1987,13 +1986,15 @@ If no speech is detected, return '[No speech detected]'.` }
                 continue;
               }
 
-              fullText += chunk.text;
-              setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-              
-              const container = document.documentElement;
-              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-              if (isNearBottom) {
-                scrollToBottom();
+              if (chunk.text) {
+                fullText += chunk.text;
+                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                
+                const container = document.documentElement;
+                const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+                if (isNearBottom) {
+                  scrollToBottom();
+                }
               }
             }
             
@@ -2037,10 +2038,8 @@ If no speech is detected, return '[No speech detected]'.` }
             });
 
             let fullText = response.text || "";
-            let hasToolCall = false;
 
             if (response.functionCalls) {
-              hasToolCall = true;
               for (const call of response.functionCalls) {
                 if (call.name === "generateLegalDocument") {
                   const { content, format, title } = call.args as any;
@@ -2074,25 +2073,26 @@ If no speech is detected, return '[No speech detected]'.` }
           success = true;
         } catch (err: any) {
           const errStr = err?.message || String(err);
-          if ((errStr.includes('quota') || errStr.includes('429') || errStr.includes('503') || errStr.includes('overloaded')) && retryCount < maxRetries) {
+          // Retry on any error during hackathon to ensure we eventually get a response
+          if (retryCount < maxRetries) {
             retryCount++;
             
             // Tiered intelligence fallback logic
             if (retryCount === 1) {
-              // Try Pro again first with a bit of wait
-              modelToUse = "gemini-3.1-pro-preview";
-              addVerificationStep(language === 'en' ? "Ultra Brain Busy. Retrying High Intelligence..." : language === 'lg' ? "Sisitimu ekoye. Tugezaako nate..." : "Sisitimu ekoye. Tugezaho nate...");
+              modelToUse = "gemini-3.1-pro-preview"; // Stay on Pro for first retry
+              addVerificationStep(language === 'en' ? "Optimizing Brain Connectivity..." : language === 'lg' ? "Okulongoosa obutebenkevu..." : "Okulongoosa obutebenkevu...");
             } else if (retryCount === 2) {
-              // Switch to Flash (Gemini 3) - still very smart but higher quota
-              modelToUse = "gemini-3-flash-preview";
-              addVerificationStep(language === 'en' ? "Switching to Balanced Intelligence Brain..." : language === 'lg' ? "Tufuula obwongo obukkakkamu..." : "Tukozesa obwongo obukkakkamu...");
+              modelToUse = "gemini-3-flash-preview"; // Drop to high-quota Gemini 3 Flash
+              addVerificationStep(language === 'en' ? "Switching to Balanced Intelligence..." : language === 'lg' ? "Tufuula obwongo obukkakkamu..." : "Tukozesa obwongo obukkakkamu...");
             } else if (retryCount === 3) {
-              // Absolute last resort
-              modelToUse = "gemini-1.5-flash";
-              addVerificationStep(language === 'en' ? "Deploying Stable Recovery Engine..." : language === 'lg' ? "Tukozesa enkozesa entuufu..." : "Tukozesa enkozesa entuufu...");
+              modelToUse = "gemini-3.1-flash-lite-preview"; // Drop to high-availability Gemini 3 Lite
+              addVerificationStep(language === 'en' ? "Deploying High-Availability Brain..." : language === 'lg' ? "Okukozesa obwongo obuluse..." : "Okukozesa obwongo obuluse...");
+            } else if (retryCount === 4) {
+              modelToUse = "gemini-flash-latest"; // Final stable alias
+              addVerificationStep(language === 'en' ? "Engaging Resilient Recovery Engine..." : language === 'lg' ? "Okwongera amaanyi..." : "Okwongera amaanyi...");
             }
 
-            await new Promise(r => setTimeout(r, 2000 * retryCount));
+            await new Promise(r => setTimeout(r, 1500 * retryCount));
             continue;
           }
           throw err;
@@ -2130,19 +2130,14 @@ If no speech is detected, return '[No speech detected]'.` }
         errorMessage = language === 'en'
           ? "Security Error: Permission denied. If using a shared link, please ensure this domain is added to 'Authorized Domains' in your Firebase Console."
           : "Obuzibu mu bukuumi: Olukusa lugaaniddwa. Kakasa nti domain eno eri mu 'Authorized Domains' mu Firebase.";
-      } else if (errorStr.includes('quota') || errorStr.includes('429')) {
+      } else if (errorStr.includes('quota') || errorStr.includes('429') || errorStr.includes('overloaded')) {
         errorMessage = language === 'en'
-          ? "System Busy: Quota exceeded. Please wait a moment and try again."
+          ? "System Busy: All AI priority lanes are full. Please wait 15 seconds and try again."
           : "Sisitimu ekoye: Lindako katono oddemu ogezeeko.";
       }
 
-      const assistantError: Message = { 
-        id: generateId(), 
-        role: 'assistant', 
-        content: errorMessage, 
-        timestamp: new Date() 
-      };
-      updateSessionMessages(prev => [...prev, assistantError]);
+      // UPDATE EXISTING MESSAGE WITH ERROR
+      updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: errorMessage } : m));
     }
     setIsLoading(false);
   };
