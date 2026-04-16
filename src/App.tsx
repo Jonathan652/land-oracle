@@ -1890,7 +1890,16 @@ If no speech is detected, return '[No speech detected]'.` }
     const assistantMessageId = generateId();
 
     try {
-      const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
+      const { 
+        SYSTEM_INSTRUCTION, 
+        LUGANDA_SYSTEM_INSTRUCTION, 
+        RUNYANKORE_SYSTEM_INSTRUCTION 
+      } = await import('./constants/systemInstructions');
+      
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("GEMINI_API_KEY_MISSING");
+      }
       const ai = getAI();
       addVerificationStep(language === 'en' ? "Analyzing legal intent..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
       
@@ -1904,11 +1913,17 @@ If no speech is detected, return '[No speech detected]'.` }
       // ADD MESSAGE TO UI BEFORE STREAMING
       updateSessionMessages(prev => [...prev, assistantMessage]);
 
-      const systemPrompt = isDocumentMode 
-        ? `${SYSTEM_INSTRUCTION}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-        : isCallMode
-          ? `${SYSTEM_INSTRUCTION}\n\nINTERACTIVE VOICE MODE: You are on a phone call. BE EXTREMELY BRIEF (1-2 sentences max). Be conversational and professional. NO LISTS. NO BULLET POINTS. Speak naturally like a human on a call. Respond in the same language as the user.`
+      const baseInstruction = language === 'lg' 
+        ? LUGANDA_SYSTEM_INSTRUCTION 
+        : language === 'nk' 
+          ? RUNYANKORE_SYSTEM_INSTRUCTION 
           : SYSTEM_INSTRUCTION;
+
+      const systemPrompt = isDocumentMode 
+        ? `${baseInstruction}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
+        : isCallMode
+          ? `${baseInstruction}\n\nINTERACTIVE VOICE MODE: You are on a phone call. BE EXTREMELY BRIEF (1-2 sentences max). Be conversational and professional. NO LISTS. NO BULLET POINTS. Speak naturally like a human on a call. Respond in the same language as the user.`
+          : baseInstruction;
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
@@ -1943,12 +1958,12 @@ If no speech is detected, return '[No speech detected]'.` }
 
       while (retryCount <= maxRetries && !success) {
         try {
-          // Final retry: Strip tools and model configs to bare minimum to avoid any parameter errors
           const isFinalRetry = retryCount === maxRetries;
           const currentConfig = isFinalRetry ? {
             systemInstruction: systemPrompt,
             temperature: 0.7,
-            maxOutputTokens: 1024
+            maxOutputTokens: 2048,
+            tools: [] // Emergency strip: Bypass tool-calling overhead/errors
           } : modelConfig;
 
           if (isStreamingMode) {
@@ -1973,8 +1988,8 @@ If no speech is detected, return '[No speech detected]'.` }
             let fullText = "";
 
             addVerificationStep(language === 'en' 
-              ? `Engaging Statum ${modelToUse.includes('pro') ? 'Ultra' : modelToUse.includes('flash-preview') ? 'Expert' : 'Stable'} Brain...` 
-              : "Connecting to Statum Legal Oracle...");
+              ? `Pulse check: ${modelToUse}...` 
+              : "Laba omanyi bwa Statum...");
 
             for await (const chunk of stream) {
               if (chunk.functionCalls && !isFinalRetry) {
@@ -2086,17 +2101,21 @@ If no speech is detected, return '[No speech detected]'.` }
             retryCount++;
             
             if (retryCount === 1) {
-              modelToUse = "gemini-3.1-pro-preview"; // Try Pro if Flash failed
-              addVerificationStep(language === 'en' ? "Escalating to Statum Ultra-IQ Brain..." : "Improving Intelligence Density...");
+              modelToUse = "gemini-3-flash-preview"; 
+              addVerificationStep(language === 'en' ? "Staggering Retry..." : "Okulongoosa...");
+              await new Promise(r => setTimeout(r, 2000));
             } else if (retryCount === 2) {
-              modelToUse = "gemini-3.1-flash-lite-preview"; // High availability
-              addVerificationStep(language === 'en' ? "Optimizing Connection Speed..." : "Okulongoosa enkwatagana...");
+              modelToUse = "gemini-3.1-pro-preview"; 
+              addVerificationStep(language === 'en' ? "Escalating Intelligence..." : "Okulongoosa...");
+              await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              modelToUse = "gemini-flash-latest"; // Recovery stable
-              addVerificationStep(language === 'en' ? "Engaging Resilient Recovery Brain..." : "Okukozesa obwongo obukkakkamu...");
+              modelToUse = "gemini-3.1-flash-lite-preview"; 
+              addVerificationStep(language === 'en' ? "Optimizing Latency..." : "Okulongoosa...");
+              await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 4) {
-              modelToUse = "gemini-1.5-flash"; // Absolute last resort, bare config (as defined by currentConfig)
-              addVerificationStep(language === 'en' ? "Deploying Core Knowledge Engine..." : "Okumaliriza...");
+              modelToUse = "gemini-flash-latest"; 
+              addVerificationStep(language === 'en' ? "Stable Core Recovery..." : "Okumaliriza...");
+              await new Promise(r => setTimeout(r, 500));
             }
 
             await new Promise(r => setTimeout(r, 1000 * retryCount));

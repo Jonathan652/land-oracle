@@ -61,3 +61,15 @@ ${LANDMARK_LAND_CASES_CONTEXT}
 
 DISCLAIMER: Always include: "For guidance only—not legal advice. Consult a lawyer for specific cases." at the end.
 `;
+
+export const LUGANDA_SYSTEM_INSTRUCTION = `
+${SYSTEM_INSTRUCTION}
+
+STRICT BILINGUAL RULE: Respond exclusively in Luganda (Oluganda). Maintain professional legal terminology (Empagi z'amateeka).
+`;
+
+export const RUNYANKORE_SYSTEM_INSTRUCTION = `
+${SYSTEM_INSTRUCTION}
+
+STRICT BILINGUAL RULE: Respond exclusively in Runyankore/Rukiga. Maintain professional legal terminology.
+`;
