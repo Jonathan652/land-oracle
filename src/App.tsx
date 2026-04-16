@@ -663,82 +663,96 @@ export default function App() {
       - RUNYANKORE: Greetings like "Agandi". Uses "R" (e.g. "Kurungi").
       Respond in the user's language. Use simple words for clarity.`;
 
-      const session = await ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
-        config: {
-          responseModalities: [Modality.AUDIO],
-          tools: [{ googleSearch: {} }],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+      const sessionAttempt = async (model: string) => {
+        let session: any;
+        session = await ai.live.connect({
+          model,
+          config: {
+            responseModalities: [Modality.AUDIO],
+            tools: [{ googleSearch: {} }],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+            },
+            systemInstruction: liveInstruction,
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
           },
-          systemInstruction: liveInstruction,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-        },
-        callbacks: {
-          onopen: async () => {
-            console.log("Statum AI: Live session opened");
-            setIsLoading(false);
-            liveSessionRef.current = session;
-          },
-          onmessage: async (message: any) => {
-            // Handle Audio Output
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64Audio) {
-              const binaryString = atob(base64Audio);
-              const len = binaryString.length;
-              const bytes = new Uint8Array(len);
-              for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
+          callbacks: {
+            onopen: async () => {
+              console.log(`Statum AI: Live session opened with ${model}`);
+              setIsLoading(false);
+              liveSessionRef.current = session;
+            },
+            onmessage: async (message: any) => {
+              // Handle Audio Output
+              const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+              if (base64Audio) {
+                const binaryString = atob(base64Audio);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                const dataView = new DataView(bytes.buffer);
+                const numSamples = Math.floor(len / 2);
+                const float32 = new Float32Array(numSamples);
+                for (let i = 0; i < numSamples; i++) {
+                  float32[i] = dataView.getInt16(i * 2, true) / 32768;
+                }
+                
+                queueLiveAudio(float32);
               }
               
-              const dataView = new DataView(bytes.buffer);
-              const numSamples = Math.floor(len / 2);
-              const float32 = new Float32Array(numSamples);
-              for (let i = 0; i < numSamples; i++) {
-                float32[i] = dataView.getInt16(i * 2, true) / 32768;
+              // Handle Interruption
+              if (message.serverContent?.interrupted) {
+                console.log("Statum AI: Interrupted by user");
+                stopLiveAudio();
               }
               
-              queueLiveAudio(float32);
-            }
-            
-            // Handle Interruption
-            if (message.serverContent?.interrupted) {
-              console.log("Statum AI: Interrupted by user");
-              stopLiveAudio();
-            }
-            
-            // Handle Transcriptions
-            const modelText = message.serverContent?.modelTurn?.parts?.[0]?.text;
-            if (modelText) {
-              setStreamingContent(prev => ({ ...prev, live: (prev.live || "") + modelText }));
-            }
-            
-            const userText = message.serverContent?.userContent?.parts?.[0]?.text;
-            if (userText && userText.trim().length > 1) {
-              setInput(userText);
-              // Clear previous AI response when user starts speaking
-              setStreamingContent(prev => ({ ...prev, live: "" }));
-            }
+              // Handle Transcriptions
+              const modelText = message.serverContent?.modelTurn?.parts?.[0]?.text;
+              if (modelText) {
+                setStreamingContent(prev => ({ ...prev, live: (prev.live || "") + modelText }));
+              }
+              
+              const userText = message.serverContent?.userContent?.parts?.[0]?.text;
+              if (userText && userText.trim().length > 1) {
+                setInput(userText);
+                // Clear previous AI response when user starts speaking
+                setStreamingContent(prev => ({ ...prev, live: "" }));
+              }
 
-            if (message.serverContent?.turnComplete) {
-              console.log("Statum AI: Model turn complete");
+              if (message.serverContent?.turnComplete) {
+                console.log("Statum AI: Model turn complete");
+              }
+            },
+            onclose: () => {
+              console.log("Statum AI: Live session closed");
+              stopLiveSession();
+            },
+            onerror: (err: any) => {
+              console.error("Statum AI: Live session error:", err);
+              const errStr = String(err?.message || err);
+              if (errStr.includes("429") || errStr.includes("quota")) {
+                setVoiceError("Live engine busy. Switching...");
+              } else {
+                setVoiceError("Connection lost. Reconnecting...");
+              }
+              stopLiveSession();
+              setTimeout(startLiveSession, 2000);
             }
-          },
-          onclose: () => {
-            console.log("Statum AI: Live session closed");
-            stopLiveSession();
-          },
-          onerror: (err) => {
-            console.error("Statum AI: Live session error:", err);
-            setVoiceError("Connection lost. Reconnecting...");
-            stopLiveSession();
-            setTimeout(startLiveSession, 2000);
           }
-        }
-      });
-      
-      liveSessionRef.current = session;
+        });
+        return session;
+      };
+
+      try {
+        liveSessionRef.current = await sessionAttempt("gemini-3.1-flash-live-preview");
+      } catch (err: any) {
+        console.warn("Statum AI: Primary Live session failed, trying fallback...", err);
+        liveSessionRef.current = await sessionAttempt("gemini-1.5-flash");
+      }
     } catch (err) {
       console.error("Statum AI: Failed to start live session:", err);
       setIsLoading(false);
@@ -1921,14 +1935,15 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       let retryCount = 0;
-      const maxRetries = 2;
+      const maxRetries = 3;
       let success = false;
+      let modelToUse = "gemini-3-flash-preview";
 
       while (retryCount <= maxRetries && !success) {
         try {
           if (isStreamingMode) {
             const stream = await ai.models.generateContentStream({
-              model: "gemini-3-flash-preview",
+              model: modelToUse,
               contents: promptMessages.map(m => {
                 const parts: any[] = [];
                 if (m.attachments) {
@@ -2004,7 +2019,7 @@ If no speech is detected, return '[No speech detected]'.` }
             }
           } else {
             const response = await ai.models.generateContent({
-              model: "gemini-3-flash-preview",
+              model: modelToUse,
               contents: promptMessages.map(m => {
                 const parts: any[] = [];
                 if (m.attachments) {
@@ -2059,10 +2074,19 @@ If no speech is detected, return '[No speech detected]'.` }
           success = true;
         } catch (err: any) {
           const errStr = err?.message || String(err);
-          if ((errStr.includes('quota') || errStr.includes('429') || errStr.includes('503')) && retryCount < maxRetries) {
+          // If Gemini 3 is busy or overloaded, retry then fallback to 1.5 Flash
+          if ((errStr.includes('quota') || errStr.includes('429') || errStr.includes('503') || errStr.includes('overloaded')) && retryCount < maxRetries) {
             retryCount++;
-            addVerificationStep(language === 'en' ? `System busy. Retrying (${retryCount}/${maxRetries})...` : language === 'lg' ? `Sisitimu ekoye. Tugezaako nate (${retryCount}/${maxRetries})...` : `Sisitimu ekoye. Tugezaho nate (${retryCount}/${maxRetries})...`);
-            await new Promise(r => setTimeout(r, 4000 * retryCount));
+            
+            // On final retry, switch to the stable 1.5 Flash model
+            if (retryCount === maxRetries) {
+              modelToUse = "gemini-1.5-flash";
+              addVerificationStep(language === 'en' ? "Gemini 3 is busy. Switching to Stable Model (1.5 Flash)..." : language === 'lg' ? "Gemini 3 ekooye. Tufuula enkozesa y'ekyuma (1.5 Flash)..." : "Gemini 3 ekooye. Tukozesa enyishomesa eshikire (1.5 Flash)...");
+            } else {
+              addVerificationStep(language === 'en' ? `System busy. Retrying (${retryCount}/${maxRetries})...` : language === 'lg' ? `Sisitimu ekoye. Tugezaako nate (${retryCount}/${maxRetries})...` : `Sisitimu ekoye. Tugezaho nate (${retryCount}/${maxRetries})...`);
+            }
+
+            await new Promise(r => setTimeout(r, 2000 * retryCount));
             continue;
           }
           throw err;
