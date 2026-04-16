@@ -1937,7 +1937,7 @@ If no speech is detected, return '[No speech detected]'.` }
       let retryCount = 0;
       const maxRetries = 3;
       let success = false;
-      let modelToUse = "gemini-3-flash-preview";
+      let modelToUse = "gemini-3.1-pro-preview"; // Statum Ultra-Intelligence Brain
 
       while (retryCount <= maxRetries && !success) {
         try {
@@ -1963,7 +1963,7 @@ If no speech is detected, return '[No speech detected]'.` }
             let fullText = "";
             let hasToolCall = false;
 
-            addVerificationStep(language === 'en' ? "Finalizing professional response..." : language === 'lg' ? "Okumaliriza okuddamu..." : "Okumaliriza okugarukamu...");
+            addVerificationStep(language === 'en' ? `Engaging Statum ${modelToUse.includes('pro') ? 'Ultra' : modelToUse.includes('flash-preview') ? 'Balanced' : 'Stable'} Brain...` : language === 'lg' ? "Okukozesa obwongo obw'amaanyi..." : "Okukozesa obwongo obuhame...");
 
             for await (const chunk of stream) {
               if (chunk.functionCalls) {
@@ -2074,16 +2074,22 @@ If no speech is detected, return '[No speech detected]'.` }
           success = true;
         } catch (err: any) {
           const errStr = err?.message || String(err);
-          // If Gemini 3 is busy or overloaded, retry then fallback to 1.5 Flash
           if ((errStr.includes('quota') || errStr.includes('429') || errStr.includes('503') || errStr.includes('overloaded')) && retryCount < maxRetries) {
             retryCount++;
             
-            // On final retry, switch to the stable 1.5 Flash model
-            if (retryCount === maxRetries) {
+            // Tiered intelligence fallback logic
+            if (retryCount === 1) {
+              // Try Pro again first with a bit of wait
+              modelToUse = "gemini-3.1-pro-preview";
+              addVerificationStep(language === 'en' ? "Ultra Brain Busy. Retrying High Intelligence..." : language === 'lg' ? "Sisitimu ekoye. Tugezaako nate..." : "Sisitimu ekoye. Tugezaho nate...");
+            } else if (retryCount === 2) {
+              // Switch to Flash (Gemini 3) - still very smart but higher quota
+              modelToUse = "gemini-3-flash-preview";
+              addVerificationStep(language === 'en' ? "Switching to Balanced Intelligence Brain..." : language === 'lg' ? "Tufuula obwongo obukkakkamu..." : "Tukozesa obwongo obukkakkamu...");
+            } else if (retryCount === 3) {
+              // Absolute last resort
               modelToUse = "gemini-1.5-flash";
-              addVerificationStep(language === 'en' ? "Gemini 3 is busy. Switching to Stable Model (1.5 Flash)..." : language === 'lg' ? "Gemini 3 ekooye. Tufuula enkozesa y'ekyuma (1.5 Flash)..." : "Gemini 3 ekooye. Tukozesa enyishomesa eshikire (1.5 Flash)...");
-            } else {
-              addVerificationStep(language === 'en' ? `System busy. Retrying (${retryCount}/${maxRetries})...` : language === 'lg' ? `Sisitimu ekoye. Tugezaako nate (${retryCount}/${maxRetries})...` : `Sisitimu ekoye. Tugezaho nate (${retryCount}/${maxRetries})...`);
+              addVerificationStep(language === 'en' ? "Deploying Stable Recovery Engine..." : language === 'lg' ? "Tukozesa enkozesa entuufu..." : "Tukozesa enkozesa entuufu...");
             }
 
             await new Promise(r => setTimeout(r, 2000 * retryCount));
