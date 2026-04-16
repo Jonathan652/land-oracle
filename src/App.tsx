@@ -1920,138 +1920,153 @@ If no speech is detected, return '[No speech detected]'.` }
         await new Promise(r => setTimeout(r, 600));
       }
 
-      if (isStreamingMode) {
-        const stream = await ai.models.generateContentStream({
-          model: "gemini-3-flash-preview",
-          contents: promptMessages.map(m => {
-            const parts: any[] = [];
-            if (m.attachments) {
-              m.attachments.forEach(a => {
-                parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
-              });
-            }
-            parts.push({ text: m.content });
-            return {
-              role: m.role === 'user' ? 'user' : 'model',
-              parts
-            };
-          }),
-          config: modelConfig,
-        });
+      let retryCount = 0;
+      const maxRetries = 2;
+      let success = false;
 
-        let fullText = "";
-        let hasToolCall = false;
+      while (retryCount <= maxRetries && !success) {
+        try {
+          if (isStreamingMode) {
+            const stream = await ai.models.generateContentStream({
+              model: "gemini-3-flash-preview",
+              contents: promptMessages.map(m => {
+                const parts: any[] = [];
+                if (m.attachments) {
+                  m.attachments.forEach(a => {
+                    parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
+                  });
+                }
+                parts.push({ text: m.content });
+                return {
+                  role: m.role === 'user' ? 'user' : 'model',
+                  parts
+                };
+              }),
+              config: modelConfig,
+            });
 
-        addVerificationStep(language === 'en' ? "Finalizing professional response..." : language === 'lg' ? "Okumaliriza okuddamu..." : "Okumaliriza okugarukamu...");
+            let fullText = "";
+            let hasToolCall = false;
 
-        for await (const chunk of stream) {
-          if (chunk.functionCalls) {
-            hasToolCall = true;
-            for (const call of chunk.functionCalls) {
-              if (call.name === "generateLegalDocument") {
-                const { content, format, title } = call.args as any;
-                const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
-                
-                const successMsg = language === 'en' 
-                  ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                  : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                
-                fullText += successMsg;
-                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-              } else if (call.name === "generateLegalRoadmap") {
-                const roadmapData = call.args as any;
-                updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+            addVerificationStep(language === 'en' ? "Finalizing professional response..." : language === 'lg' ? "Okumaliriza okuddamu..." : "Okumaliriza okugarukamu...");
+
+            for await (const chunk of stream) {
+              if (chunk.functionCalls) {
+                hasToolCall = true;
+                for (const call of chunk.functionCalls) {
+                  if (call.name === "generateLegalDocument") {
+                    const { content, format, title } = call.args as any;
+                    const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
+                    
+                    const successMsg = language === 'en' 
+                      ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                      : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                    
+                    fullText += successMsg;
+                    setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                  } else if (call.name === "generateLegalRoadmap") {
+                    const roadmapData = call.args as any;
+                    updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+                  }
+                }
+                continue;
+              }
+
+              fullText += chunk.text;
+              setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+              
+              const container = document.documentElement;
+              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+              if (isNearBottom) {
+                scrollToBottom();
               }
             }
+            
+            updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+            setStreamingContent(prev => {
+              const next = { ...prev };
+              delete next[assistantMessageId];
+              return next;
+            });
+            
+            if (isCallMode) {
+              const remaining = fullText.trim();
+              if (remaining && !processedSentencesRef.current.has(remaining)) {
+                queueSentence(remaining, assistantMessageId);
+              }
+              
+              const checkFinished = setInterval(() => {
+                if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
+                  clearInterval(checkFinished);
+                  if (isCallMode) toggleRecording();
+                }
+              }, 500);
+            }
+          } else {
+            const response = await ai.models.generateContent({
+              model: "gemini-3-flash-preview",
+              contents: promptMessages.map(m => {
+                const parts: any[] = [];
+                if (m.attachments) {
+                  m.attachments.forEach(a => {
+                    parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
+                  });
+                }
+                parts.push({ text: m.content });
+                return {
+                  role: m.role === 'user' ? 'user' : 'model',
+                  parts
+                };
+              }),
+              config: modelConfig,
+            });
+
+            let fullText = response.text || "";
+            let hasToolCall = false;
+
+            if (response.functionCalls) {
+              hasToolCall = true;
+              for (const call of response.functionCalls) {
+                if (call.name === "generateLegalDocument") {
+                  const { content, format, title } = call.args as any;
+                  const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
+                  
+                  const successMsg = language === 'en' 
+                    ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                    : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                  
+                  fullText = successMsg;
+                } else if (call.name === "generateLegalRoadmap") {
+                  const roadmapData = call.args as any;
+                  updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+                }
+              }
+            }
+
+            updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+            
+            if (isCallMode) {
+              queueSentence(fullText, assistantMessageId);
+              
+              const checkFinished = setInterval(() => {
+                if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
+                  clearInterval(checkFinished);
+                  if (isCallMode) toggleRecording();
+                }
+              }, 500);
+            }
+          }
+          success = true;
+        } catch (err: any) {
+          const errStr = err?.message || String(err);
+          if ((errStr.includes('quota') || errStr.includes('429') || errStr.includes('503')) && retryCount < maxRetries) {
+            retryCount++;
+            addVerificationStep(language === 'en' ? `System busy. Retrying (${retryCount}/${maxRetries})...` : language === 'lg' ? `Sisitimu ekoye. Tugezaako nate (${retryCount}/${maxRetries})...` : `Sisitimu ekoye. Tugezaho nate (${retryCount}/${maxRetries})...`);
+            await new Promise(r => setTimeout(r, 4000 * retryCount));
             continue;
           }
-
-          fullText += chunk.text;
-          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-          
-          // Smoother scrolling: only scroll if we're already near the bottom
-          const container = document.documentElement;
-          const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-          if (isNearBottom) {
-            scrollToBottom();
-          }
+          throw err;
         }
-        
-        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-        setStreamingContent(prev => {
-          const next = { ...prev };
-          delete next[assistantMessageId];
-          return next;
-        });
-        
-      if (isCallMode) {
-        const remaining = fullText.trim();
-        if (remaining && !processedSentencesRef.current.has(remaining)) {
-          queueSentence(remaining, assistantMessageId);
-        }
-        
-        // Wait for all sentences to finish speaking before listening again
-        const checkFinished = setInterval(() => {
-          if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
-            clearInterval(checkFinished);
-            if (isCallMode) toggleRecording();
-          }
-        }, 500);
-      }
-      } else {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: promptMessages.map(m => {
-            const parts: any[] = [];
-            if (m.attachments) {
-              m.attachments.forEach(a => {
-                parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
-              });
-            }
-            parts.push({ text: m.content });
-            return {
-              role: m.role === 'user' ? 'user' : 'model',
-              parts
-            };
-          }),
-          config: modelConfig,
-        });
-
-        let fullText = response.text || "";
-        let hasToolCall = false;
-
-        if (response.functionCalls) {
-          hasToolCall = true;
-          for (const call of response.functionCalls) {
-            if (call.name === "generateLegalDocument") {
-              const { content, format, title } = call.args as any;
-              const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
-              
-              const successMsg = language === 'en' 
-                ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-              
-              fullText = successMsg;
-            } else if (call.name === "generateLegalRoadmap") {
-              const roadmapData = call.args as any;
-              updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
-            }
-          }
-        }
-
-        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-        
-      if (isCallMode) {
-        queueSentence(fullText, assistantMessageId);
-        
-        // Wait for all sentences to finish speaking before listening again
-        const checkFinished = setInterval(() => {
-          if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
-            clearInterval(checkFinished);
-            if (isCallMode) toggleRecording();
-          }
-        }, 500);
-      }
       }
 
       if (user && !isPro) {
