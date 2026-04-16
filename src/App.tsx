@@ -155,7 +155,11 @@ const LegalIntelligenceBadge = () => (
 );
 
 // --- Oracle Core ---
-const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const getAI = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) console.warn("GEMINI_API_KEY is missing from environment variables.");
+  return new GoogleGenAI({ apiKey: key || '' });
+};
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -943,7 +947,7 @@ export default function App() {
         try {
           const ai = getAI();
           const transcriptionPromise = ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+            model: "gemini-2.0-flash",
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
@@ -1015,7 +1019,7 @@ If no speech is detected, return '[No speech detected]'.` }
         try {
           const ai = getAI();
           const streamPromise = ai.models.generateContentStream({
-            model: "gemini-3-flash-preview",
+            model: "gemini-2.0-flash",
             contents: { 
               parts: [
                 { text: transcribedText }
@@ -1063,7 +1067,7 @@ If no speech is detected, return '[No speech detected]'.` }
       } else {
         const ai = getAI();
         const responsePromise = ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.0-flash",
           contents: { 
             parts: [
               { text: transcribedText }
@@ -1186,7 +1190,7 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       const response = await ttsAi.models.generateContentStream({
-        model: "gemini-2.5-flash-preview-tts",
+        model: "gemini-3.1-flash-tts-preview",
         contents: [{ parts: [{ text: cleanedText }] }],
         config: { 
           responseModalities: [Modality.AUDIO], 
@@ -1571,9 +1575,9 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       let retryCount = 0;
-      const maxRetries = 4; 
+      const maxRetries = 3; 
       let success = false;
-      let modelToUse = "gemini-3.1-pro-preview"; 
+      let modelToUse = "gemini-2.0-flash"; // Primary stable model for hackathon speed
 
       while (retryCount <= maxRetries && !success) {
         try {
@@ -1654,17 +1658,16 @@ If no speech is detected, return '[No speech detected]'.` }
             retryCount++;
             
             if (retryCount === 1) {
-              modelToUse = "gemini-3-flash-preview"; 
-              await new Promise(r => setTimeout(r, 2000));
+              // Try the advanced 'thinking' model if available
+              modelToUse = "gemini-3.1-pro-preview"; 
+              await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              modelToUse = "gemini-3.1-flash-lite-preview"; 
+              // Try the newest experimental flash
+              modelToUse = "gemini-3-flash-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              modelToUse = "gemini-flash-latest"; 
-              await new Promise(r => setTimeout(r, 1000));
-            } else if (retryCount === 4) {
+              // Final fallback to the rock-solid 1.5 flash
               modelToUse = "gemini-1.5-flash"; 
-              await new Promise(r => setTimeout(r, 500));
             }
 
             await new Promise(r => setTimeout(r, 1000 * retryCount));
@@ -1685,6 +1688,8 @@ If no speech is detected, return '[No speech detected]'.` }
       }
     } catch (error: any) {
       console.error(`Oracle Error:`, error);
+      const errorStr = error?.message || String(error);
+      
       let errorMessage = language === 'en' 
         ? "I'm having trouble replying. Please try again." 
         : language === 'lg' 
@@ -1692,7 +1697,6 @@ If no speech is detected, return '[No speech detected]'.` }
           : "Ninyetegyereza obuzibu omu kukugarukamu.";
 
       // Check for common cross-device/production errors
-      const errorStr = error?.message || String(error);
       if (errorStr.includes('API_KEY_INVALID') || errorStr.includes('API key not valid')) {
         errorMessage = language === 'en'
           ? "Configuration Error: The Gemini API Key is invalid or missing. Please check your AI Studio Secrets."
@@ -1705,6 +1709,9 @@ If no speech is detected, return '[No speech detected]'.` }
         errorMessage = language === 'en'
           ? "System Busy: All AI priority lanes are full. Please wait 15 seconds and try again."
           : "Sisitimu ekoye: Lindako katono oddemu ogezeeko.";
+      } else {
+        // Simple technical tag for better debugging
+        errorMessage += `\n\n[Technical Detail: ${errorStr.substring(0, 40)}...]`;
       }
 
       // UPDATE EXISTING MESSAGE WITH ERROR
