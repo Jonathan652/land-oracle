@@ -1550,7 +1550,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
-        temperature: 0.2, 
+        temperature: 0.1, 
         maxOutputTokens: 8192, 
         tools: [
           ...(isDocumentMode ? [] : [{ googleSearch: {} }]),
@@ -1575,16 +1575,51 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       let retryCount = 0;
-      const maxRetries = 3; 
+      const maxRetries = 3; // Groq is now at Retry 3
       let success = false;
-      let modelToUse = "gemini-3-flash-preview"; // Fast, advanced, and officially supported
+      let modelToUse = "gemini-3-flash-preview"; // Fast and advanced model
 
       while (retryCount <= maxRetries && !success) {
         try {
-          const isFinalRetry = retryCount === maxRetries;
+          // FALLBACK TO GROQ (RETRY 3)
+          if (retryCount === 3) {
+            const groqResponse = await fetch('/api/groq', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: promptMessages,
+                systemPrompt: systemPrompt
+              })
+            });
+
+            if (!groqResponse.ok) {
+              const errData = await groqResponse.json();
+              throw new Error(errData.error || "Groq backup failed");
+            }
+
+            const { text } = await groqResponse.json();
+            const groqIndicator = language === 'en' 
+              ? "\n\n*(Switched to Backup Engine for better reliability)*" 
+              : "\n\n*(Tukyusizza ku 'backup engine' okukuvaako obuzibu)*";
+            
+            const finalContent = text + groqIndicator;
+
+            updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: finalContent } : m));
+            setStreamingContent(prev => {
+              const next = { ...prev };
+              delete next[assistantMessageId];
+              return next;
+            });
+            
+            if (isCallMode) speakText(finalContent, assistantMessageId);
+            success = true;
+            break;
+          }
+
+          const isFinalRetry = retryCount === maxRetries - 1;
           const currentConfig = isFinalRetry ? {
             systemInstruction: systemPrompt,
-            temperature: 0.7,
+            temperature: 0.1,
             maxOutputTokens: 2048,
             tools: [] 
           } : modelConfig;
@@ -1662,12 +1697,11 @@ If no speech is detected, return '[No speech detected]'.` }
               modelToUse = "gemini-3.1-pro-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              // Try the ultra-fast lite version
+              // Try the Gemini 3.1 Lite version
               modelToUse = "gemini-3.1-flash-lite-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              // Final fallback to the rock-solid 1.5 flash
-              modelToUse = "gemini-1.5-flash"; 
+              // Final fallback to Groq handled at top of loop
             }
 
             await new Promise(r => setTimeout(r, 1000 * retryCount));
@@ -1987,12 +2021,20 @@ If no speech is detected, return '[No speech detected]'.` }
               <Smartphone size={18} className="sm:w-5 sm:h-5" />
             </button>
             <button 
-              onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
+              onClick={() => setLanguage(l => l === 'en' ? 'lg' : l === 'lg' ? 'nk' : 'en')}
               className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-[9px] sm:text-[10px] font-bold text-slate-600 transition-all uppercase tracking-[0.1em] border border-slate-200"
-              aria-label={language === 'en' ? "Switch to Luganda" : "Switch to English"}
-              title={language === 'en' ? "Switch to Luganda" : "Switch to English"}
+              aria-label={
+                language === 'en' ? "Switch to Luganda" : 
+                language === 'lg' ? "Switch to Runyankore" : 
+                "Switch to English"
+              }
+              title={
+                language === 'en' ? "Switch to Luganda" : 
+                language === 'lg' ? "Switch to Runyankore" : 
+                "Switch to English"
+              }
             >
-              {language === 'en' ? 'EN' : 'LG'}
+              {language === 'en' ? 'EN' : language === 'lg' ? 'LG' : 'NK'}
             </button>
           </div>
         </header>
