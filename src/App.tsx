@@ -947,7 +947,7 @@ export default function App() {
         try {
           const ai = getAI();
           const transcriptionPromise = ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-3-flash-preview",
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
@@ -1019,7 +1019,7 @@ If no speech is detected, return '[No speech detected]'.` }
         try {
           const ai = getAI();
           const streamPromise = ai.models.generateContentStream({
-            model: "gemini-2.0-flash",
+            model: "gemini-3-flash-preview",
             contents: { 
               parts: [
                 { text: transcribedText }
@@ -1067,7 +1067,7 @@ If no speech is detected, return '[No speech detected]'.` }
       } else {
         const ai = getAI();
         const responsePromise = ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-3-flash-preview",
           contents: { 
             parts: [
               { text: transcribedText }
@@ -1577,7 +1577,7 @@ If no speech is detected, return '[No speech detected]'.` }
       let retryCount = 0;
       const maxRetries = 3; 
       let success = false;
-      let modelToUse = "gemini-2.0-flash"; // Primary stable model for hackathon speed
+      let modelToUse = "gemini-3-flash-preview"; // Fast, advanced, and officially supported
 
       while (retryCount <= maxRetries && !success) {
         try {
@@ -1658,12 +1658,12 @@ If no speech is detected, return '[No speech detected]'.` }
             retryCount++;
             
             if (retryCount === 1) {
-              // Try the advanced 'thinking' model if available
+              // Try the advanced 'Pro' thinking model
               modelToUse = "gemini-3.1-pro-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              // Try the newest experimental flash
-              modelToUse = "gemini-3-flash-preview"; 
+              // Try the ultra-fast lite version
+              modelToUse = "gemini-3.1-flash-lite-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
               // Final fallback to the rock-solid 1.5 flash
@@ -1710,8 +1710,13 @@ If no speech is detected, return '[No speech detected]'.` }
           ? "System Busy: All AI priority lanes are full. Please wait 15 seconds and try again."
           : "Sisitimu ekoye: Lindako katono oddemu ogezeeko.";
       } else {
-        // Simple technical tag for better debugging
-        errorMessage += `\n\n[Technical Detail: ${errorStr.substring(0, 40)}...]`;
+        // Simple technical tag for better debugging - extracting the core message
+        let detail = errorStr;
+        try {
+          const parsed = JSON.parse(errorStr);
+          if (parsed.error?.message) detail = parsed.error.message;
+        } catch(e) {}
+        errorMessage += `\n\n[Details: ${detail.substring(0, 80)}...]`;
       }
 
       // UPDATE EXISTING MESSAGE WITH ERROR
