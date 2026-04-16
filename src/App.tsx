@@ -4,6 +4,42 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type, FunctionDeclaration, LiveServerMessage } from "@google/genai";
+import { generatePDF, generateDOCX } from './lib/documentService';
+import { 
+  auth, 
+  db, 
+  signInWithGoogle, 
+  logout, 
+  handleFirestoreError, 
+  OperationType, 
+  signUpWithEmail, 
+  signInWithEmail, 
+  sendVerification 
+} from './firebase';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification
+} from 'firebase/auth';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  onSnapshot,
+  collection,
+  query,
+  orderBy,
+  limit,
+  serverTimestamp
+} from 'firebase/firestore';
+import { motion, AnimatePresence } from 'motion/react';
+import Markdown from 'react-markdown';
+import { cn } from './lib/utils';
 import { 
   MessageSquare, 
   Send, 
@@ -53,21 +89,14 @@ import {
   Camera,
   Copy
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { auth, db, signInWithGoogle, logout, handleFirestoreError, OperationType, signUpWithEmail, signInWithEmail, sendVerification } from './firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { cn } from './lib/utils';
 import { Message, ChatSession, Lawyer } from './types';
-import { MOCK_LAWYERS } from './constants/systemInstructions';
-import { generatePDF, generateDOCX } from './lib/documentService';
-import { Roadmap } from './types';
+import { MOCK_LAWYERS, SYSTEM_INSTRUCTION, LUGANDA_SYSTEM_INSTRUCTION, RUNYANKORE_SYSTEM_INSTRUCTION } from './constants/systemInstructions';
 
 const LegalNoticeModal = React.lazy(() => import('./components/LegalNoticeModal').then(m => ({ default: m.LegalNoticeModal })));
 const MarkdownRenderer = React.lazy(() => import('./components/MarkdownRenderer'));
 
 // --- Components ---
-const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: 'en' | 'lg' | 'nk' }) => (
+const RoadmapComponent = ({ roadmap, language }: { roadmap: any, language: 'en' | 'lg' }) => (
   <div className="my-6 sm:my-8 bg-white border border-slate-200 rounded-2xl sm:rounded-[2rem] overflow-hidden shadow-sm">
     <div className="p-5 sm:p-8 border-b border-slate-100 bg-slate-50/50">
       <div className="flex items-center gap-3 mb-2">
@@ -77,12 +106,12 @@ const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: '
         <h3 className="font-serif font-bold text-xl sm:text-2xl text-[#0B0F1A]">{roadmap.title}</h3>
       </div>
       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
-        {language === 'en' ? 'Statutory Procedural Roadmap' : language === 'lg' ? 'Enkola y\'amateeka ey\'omulala' : 'Enshonga z\'amateeka ezirikukuratanisa'}
+        {language === 'en' ? 'Statutory Procedural Roadmap' : 'Enkola y\'amateeka ey\'omulala'}
       </p>
     </div>
     <div className="p-5 sm:p-8 space-y-8 relative">
       <div className="absolute left-[31px] sm:left-[43px] top-12 bottom-12 w-0.5 bg-slate-100" />
-      {roadmap.steps.map((step, idx) => (
+      {roadmap.steps.map((step: any, idx: number) => (
         <motion.div 
           key={idx}
           initial={{ opacity: 0, x: -10 }}
@@ -104,12 +133,6 @@ const RoadmapComponent = ({ roadmap, language }: { roadmap: Roadmap, language: '
               step.status === 'current' ? "text-[#0B0F1A]" : "text-slate-600"
             )}>{step.title}</h4>
             <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-2 font-sans">{step.description}</p>
-            {step.statute && (
-              <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-[#0B0F1A]/5 text-[#0B0F1A] rounded-md text-[9px] font-bold uppercase tracking-wider">
-                <Gavel size={10} className="text-[#C5A059]" />
-                {step.statute}
-              </div>
-            )}
           </div>
         </motion.div>
       ))}
@@ -244,11 +267,11 @@ const CallOverlay = ({
             Statum AI
           </h2>
           <p className="text-[#C5A059] font-mono font-bold tracking-[0.3em] uppercase text-sm sm:text-lg">
-            {isSpeaking ? (language === 'en' ? 'Speaking...' : language === 'lg' ? 'Ayogera...' : 'Naagamba...') : 
-             isThinking ? (language === 'en' ? 'Connecting...' : language === 'lg' ? 'Ayungibwa...' : 'Naakwatana...') :
-             isTranscribing ? (language === 'en' ? 'Transcribing...' : language === 'lg' ? 'Nkyusa eddoboozi...' : 'Naakyusa eiraka...') :
-             isRecording ? (language === 'en' ? 'Listening...' : language === 'lg' ? 'Awuliriza...' : 'Nahurira...') : 
-             (language === 'en' ? 'Connected' : language === 'lg' ? 'Ayungiddwa' : 'Naakwatana')}
+            {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
+             isThinking ? (language === 'en' ? 'Connecting...' : 'Ayungibwa...') :
+             isTranscribing ? (language === 'en' ? 'Transcribing...' : 'Nkyusa eddoboozi...') :
+             isRecording ? (language === 'en' ? 'Listening...' : 'Awuliriza...') : 
+             (language === 'en' ? 'Connected' : 'Ayungiddwa')}
           </p>
         </div>
       </div>
@@ -364,46 +387,38 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isCallMode, setIsCallMode] = useState(false);
-  const [isLiveActive, setIsLiveActive] = useState(false);
-  const [isLiveSpeaking, setIsLiveSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [currentVolume, setCurrentVolume] = useState(0);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isLoopRestartPendingRef = useRef(false);
-  const liveSessionRef = useRef<any>(null);
-  const liveAudioQueueRef = useRef<Float32Array[]>([]);
-  const isPlayingLiveRef = useRef(false);
-  const nextLiveStartTimeRef = useRef(0);
-  const liveStreamRef = useRef<MediaStream | null>(null);
-  const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
-  const speakQueueRef = useRef<string[]>([]);
-  const isSpeakingQueueRef = useRef(false);
-  const sentenceBufferRef = useRef("");
-  const processedSentencesRef = useRef<Set<string>>(new Set());
   const [premiumReportsCount, setPremiumReportsCount] = useState(() => {
     const saved = localStorage.getItem('uganda_law_oracle_premium_reports');
     return saved ? parseInt(saved, 10) : 0;
   });
 
-  // New Features State
-  const [isStreamingMode, setIsStreamingMode] = useState(true);
-  const [streamingSpeed, setStreamingSpeed] = useState(30); // ms per character
-  const [isDocumentMode, setIsDocumentMode] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [isHoldingToRecord, setIsHoldingToRecord] = useState(false);
-  const [audioPreview, setAudioPreview] = useState<string | null>(null);
-  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [streamingContent, setStreamingContent] = useState<Record<string, string>>({});
   const [showLegalNotice, setShowLegalNotice] = useState(() => {
     return localStorage.getItem('uganda_law_oracle_legal_notice_accepted') !== 'true';
   });
-  const [attachedFiles, setAttachedFiles] = useState<{ name: string, data: string, mimeType: string }[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [recordingError, setRecordingError] = useState<string | null>(null);
-  const [verificationSteps, setVerificationSteps] = useState<string[]>([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<'chat' | 'lawyers' | 'documents' | 'services'>('chat');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isDocumentMode, setIsDocumentMode] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<{data: string, mimeType: string, name: string}[]>([]);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [audioPreview, setAudioPreview] = useState<string | null>(null);
+  const [verificationSteps, setVerificationSteps] = useState<string[]>([]);
+  const [isStreamingMode, setIsStreamingMode] = useState(true);
+  
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioBufferRef = useRef<AudioBufferSourceNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const voiceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -469,12 +484,8 @@ export default function App() {
   };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
-  const liveActiveSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const isSpeakingCancelledRef = useRef(false);
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
@@ -502,7 +513,7 @@ export default function App() {
   const createNewSession = () => {
     const newSession: ChatSession = {
       id: generateId(),
-      title: language === 'en' ? 'New Conversation' : language === 'lg' ? 'Mboozi Mpya' : 'Okushaba Okusya',
+      title: language === 'en' ? 'New Conversation' : 'Mboozi Mpya',
       messages: [],
       lastUpdated: new Date()
     };
@@ -513,7 +524,7 @@ export default function App() {
 
   const deleteSession = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm(language === 'en' ? 'Delete this conversation?' : language === 'lg' ? 'Ggyamu mboozi eno?' : 'Omuzeho okushaba oku?')) {
+    if (window.confirm(language === 'en' ? 'Delete this conversation?' : 'Ggyamu mboozi eno?')) {
       setSessions(prev => prev.filter(s => s.id !== id));
       if (currentSessionId === id) {
         setCurrentSessionId(null);
@@ -522,7 +533,7 @@ export default function App() {
   };
 
   const clearAllHistory = () => {
-    if (window.confirm(language === 'en' ? 'Clear all chat history?' : language === 'lg' ? 'Ggyamu ebyafaayo byonna?' : 'Omuzeho ebyafaayo byonna?')) {
+    if (window.confirm(language === 'en' ? 'Clear all chat history?' : 'Ggyamu ebyafaayo byonna?')) {
       setSessions([]);
       setCurrentSessionId(null);
       localStorage.removeItem('uganda_law_oracle_sessions');
@@ -557,307 +568,14 @@ export default function App() {
     }
   };
 
-  // --- Live API Logic ---
-  const startLiveSession = async () => {
-    try {
-      if (isLiveActive) return;
-      
-      console.log("Statum AI: Connecting to Live API...");
-      setIsLoading(true);
-      setIsLiveActive(true);
-      setInput(""); 
-      setStreamingContent(prev => ({ ...prev, live: "" }));
-      
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      
-      // Force resume on every start attempt
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
-      }
-
-      // 1. Setup Microphone Stream IMMEDIATELY for visualizer
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        liveStreamRef.current = stream;
-        
-        const source = audioContextRef.current.createMediaStreamSource(stream);
-        const analyser = audioContextRef.current.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        
-        const dataArray = new Uint8Array(analyser.fftSize);
-        const updateVolume = () => {
-          if (!liveStreamRef.current || !audioContextRef.current) return;
-          
-          // Ensure context is running
-          if (audioContextRef.current.state === 'suspended') {
-            audioContextRef.current.resume();
-          }
-
-          analyser.getByteTimeDomainData(dataArray);
-          
-          // Calculate RMS volume from time domain data
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            const val = (dataArray[i] - 128) / 128;
-            sum += val * val;
-          }
-          const rms = Math.sqrt(sum / dataArray.length);
-          const volume = Math.min(100, rms * 500);
-          
-          if (volume > 1 && Math.random() > 0.99) {
-            console.log("Statum AI: Audio detected (RMS):", volume.toFixed(2));
-          }
-          
-          setCurrentVolume(volume);
-          requestAnimationFrame(updateVolume);
-        };
-        updateVolume();
-
-        const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-        processorNodeRef.current = processor;
-        source.connect(processor);
-        processor.connect(audioContextRef.current.destination);
-
-        processor.onaudioprocess = (e) => {
-          if (!liveSessionRef.current) return;
-          
-          const inputData = e.inputBuffer.getChannelData(0);
-          const ratio = audioContextRef.current!.sampleRate / 16000;
-          const newLength = Math.floor(inputData.length / ratio);
-          const pcmData = new Int16Array(newLength);
-          
-          for (let i = 0; i < newLength; i++) {
-            const index = Math.floor(i * ratio);
-            pcmData[i] = Math.max(-1, Math.min(1, inputData[index])) * 0x7FFF;
-          }
-          
-          const uint8 = new Uint8Array(pcmData.buffer);
-          let binary = "";
-          for (let i = 0; i < uint8.length; i++) {
-            binary += String.fromCharCode(uint8[i]);
-          }
-          const base64Data = btoa(binary);
-          
-          liveSessionRef.current.sendRealtimeInput({
-            audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
-          });
-        };
-      } catch (micErr) {
-        console.error("Statum AI: Mic access error:", micErr);
-        setVoiceError("Microphone access denied. Please check permissions.");
-        stopLiveSession();
-        return;
-      }
-
-      // 2. Connect to Gemini Live API
-      const ai = getAI();
-      const { SYSTEM_INSTRUCTION } = await import('./constants/systemInstructions');
-      
-      const liveInstruction = `${SYSTEM_INSTRUCTION}\n\nLIVE VOICE MODE: Be conversational, authoritative, and helpful. 
-      LUGANDA vs RUNYANKORE: 
-      - LUGANDA: Greetings like "Otyanno". Uses "L" (e.g. "Bulungi").
-      - RUNYANKORE: Greetings like "Agandi". Uses "R" (e.g. "Kurungi").
-      Respond in the user's language. Use simple words for clarity.`;
-
-      const sessionAttempt = async (model: string) => {
-        let session: any;
-        session = await ai.live.connect({
-          model,
-          config: {
-            responseModalities: [Modality.AUDIO],
-            tools: [{ googleSearch: {} }],
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-            },
-            systemInstruction: liveInstruction,
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-          },
-          callbacks: {
-            onopen: async () => {
-              console.log(`Statum AI: Live session opened with ${model}`);
-              setIsLoading(false);
-              liveSessionRef.current = session;
-            },
-            onmessage: async (message: any) => {
-              // Handle Audio Output
-              const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-              if (base64Audio) {
-                const binaryString = atob(base64Audio);
-                const len = binaryString.length;
-                const bytes = new Uint8Array(len);
-                for (let i = 0; i < len; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
-                }
-                
-                const dataView = new DataView(bytes.buffer);
-                const numSamples = Math.floor(len / 2);
-                const float32 = new Float32Array(numSamples);
-                for (let i = 0; i < numSamples; i++) {
-                  float32[i] = dataView.getInt16(i * 2, true) / 32768;
-                }
-                
-                queueLiveAudio(float32);
-              }
-              
-              // Handle Interruption
-              if (message.serverContent?.interrupted) {
-                console.log("Statum AI: Interrupted by user");
-                stopLiveAudio();
-              }
-              
-              // Handle Transcriptions
-              const modelText = message.serverContent?.modelTurn?.parts?.[0]?.text;
-              if (modelText) {
-                setStreamingContent(prev => ({ ...prev, live: (prev.live || "") + modelText }));
-              }
-              
-              const userText = message.serverContent?.userContent?.parts?.[0]?.text;
-              if (userText && userText.trim().length > 1) {
-                setInput(userText);
-                // Clear previous AI response when user starts speaking
-                setStreamingContent(prev => ({ ...prev, live: "" }));
-              }
-
-              if (message.serverContent?.turnComplete) {
-                console.log("Statum AI: Model turn complete");
-              }
-            },
-            onclose: () => {
-              console.log("Statum AI: Live session closed");
-              stopLiveSession();
-            },
-            onerror: (err: any) => {
-              console.error("Statum AI: Live session error:", err);
-              const errStr = String(err?.message || err);
-              if (errStr.includes("429") || errStr.includes("quota")) {
-                setVoiceError("Live engine busy. Switching...");
-              } else {
-                setVoiceError("Connection lost. Reconnecting...");
-              }
-              stopLiveSession();
-              setTimeout(startLiveSession, 2000);
-            }
-          }
-        });
-        return session;
-      };
-
-      try {
-        liveSessionRef.current = await sessionAttempt("gemini-3.1-flash-live-preview");
-      } catch (err: any) {
-        console.warn("Statum AI: Primary Live session failed, trying fallback...", err);
-        liveSessionRef.current = await sessionAttempt("gemini-1.5-flash");
-      }
-    } catch (err) {
-      console.error("Statum AI: Failed to start live session:", err);
-      setIsLoading(false);
-      setIsLiveActive(false);
-      setVoiceError("Failed to start voice mode. Please check your microphone permissions.");
-    }
-  };
-
-  const stopLiveSession = () => {
-    if (liveSessionRef.current) {
-      liveSessionRef.current.close();
-      liveSessionRef.current = null;
-    }
-    if (processorNodeRef.current) {
-      processorNodeRef.current.disconnect();
-      processorNodeRef.current = null;
-    }
-    if (liveStreamRef.current) {
-      liveStreamRef.current.getTracks().forEach(t => t.stop());
-      liveStreamRef.current = null;
-    }
-    liveSessionRef.current = null;
-    stopLiveAudio();
-    setIsLiveActive(false);
-    setIsLoading(false);
-    setCurrentVolume(0);
-  };
-
-  const queueLiveAudio = (samples: Float32Array) => {
-    liveAudioQueueRef.current.push(samples);
-    processLiveAudioQueue();
-  };
-
-  const processLiveAudioQueue = () => {
-    if (!audioContextRef.current || liveAudioQueueRef.current.length === 0) {
-      if (liveAudioQueueRef.current.length === 0 && !isPlayingLiveRef.current) {
-        setIsLiveSpeaking(false);
-      }
-      return;
-    }
-
-    setIsLiveSpeaking(true);
-    isPlayingLiveRef.current = true;
-
-    while (liveAudioQueueRef.current.length > 0) {
-      const samples = liveAudioQueueRef.current.shift()!;
-      const buffer = audioContextRef.current.createBuffer(1, samples.length, 16000);
-      buffer.getChannelData(0).set(samples);
-      
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContextRef.current.destination);
-      
-      const currentTime = audioContextRef.current.currentTime;
-      let startTime = nextLiveStartTimeRef.current;
-      
-      // If we're too far behind or just starting, sync to current time
-      if (startTime < currentTime) {
-        startTime = currentTime + 0.02; // Reduced latency
-      }
-      
-      source.start(startTime);
-      nextLiveStartTimeRef.current = startTime + buffer.duration;
-      liveActiveSourcesRef.current.push(source);
-      
-      source.onended = () => {
-        liveActiveSourcesRef.current = liveActiveSourcesRef.current.filter(s => s !== source);
-        // Only mark as not playing if we've actually reached the end of the scheduled timeline
-        if (audioContextRef.current && audioContextRef.current.currentTime >= nextLiveStartTimeRef.current - 0.05) {
-          if (liveAudioQueueRef.current.length === 0) {
-            isPlayingLiveRef.current = false;
-            setIsLiveSpeaking(false);
-          }
-        }
-      };
-    }
-  };
-
-  const stopLiveAudio = () => {
-    liveAudioQueueRef.current = [];
-    liveActiveSourcesRef.current.forEach(source => {
-      try {
-        source.stop();
-        source.disconnect();
-      } catch (e) {
-        // Source might have already stopped
-      }
-    });
-    liveActiveSourcesRef.current = [];
-    isPlayingLiveRef.current = false;
-    setIsLiveSpeaking(false);
-    nextLiveStartTimeRef.current = 0;
-  };
-
   // --- Recording Logic ---
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (isCallMode) {
-      startLiveSession();
-    } else {
-      stopLiveSession();
+      setTimeout(() => toggleRecording(), 500);
     }
-    return () => stopLiveSession();
-  }, [isCallMode, language]);
+  }, [isCallMode]);
 
   const startRecording = async () => {
     if (isRecording || isTranscribing) return;
@@ -1263,12 +981,10 @@ If no speech is detected, return '[No speech detected]'.` }
       
       if (isCallMode) {
         if (transcribedText.includes("[No speech detected]") || transcribedText.length < 2) {
-          console.log("Statum AI: No speech detected, restarting recording...");
           setVoiceError(language === 'en' ? "I didn't catch that. Please try again." : "Sikiwulidde bulungi. Gezaako nate.");
           setIsTranscribing(false);
           setIsLoading(false);
           updateSessionMessages(prev => prev.filter(m => m.id !== userMessageId));
-          if (isCallMode) toggleRecording();
           return;
         }
       }
@@ -1338,24 +1054,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
           // Final check for any remaining text that wasn't caught by the sentence buffer
           if (isCallMode) {
-            const remaining = fullText.trim();
-            if (remaining && !processedSentencesRef.current.has(remaining)) {
-              queueSentence(remaining, assistantMessageId);
-            }
-            
-            // Wait for all sentences to finish speaking before listening again
-            const checkFinished = setInterval(() => {
-              if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
-                clearInterval(checkFinished);
-                if (isCallMode && !isLoopRestartPendingRef.current) {
-                  isLoopRestartPendingRef.current = true;
-                  setTimeout(() => {
-                    isLoopRestartPendingRef.current = false;
-                    if (isCallMode && !isRecording && !isSpeaking) toggleRecording();
-                  }, 1000);
-                }
-              }
-            }, 500);
+            speakText(fullText, assistantMessageId);
           }
         } catch (err) {
           console.error("Streaming error:", err);
@@ -1384,21 +1083,7 @@ If no speech is detected, return '[No speech detected]'.` }
         const fullText = response.text || "I apologize.";
         updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
         if (isCallMode) {
-          queueSentence(fullText, assistantMessageId);
-          
-          // Wait for all sentences to finish speaking before listening again
-          const checkFinished = setInterval(() => {
-            if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
-              clearInterval(checkFinished);
-              if (isCallMode && !isLoopRestartPendingRef.current) {
-                isLoopRestartPendingRef.current = true;
-                setTimeout(() => {
-                  isLoopRestartPendingRef.current = false;
-                  if (isCallMode && !isRecording && !isSpeaking) toggleRecording();
-                }, 1000);
-              }
-            }
-          }, 500);
+          speakText(fullText, assistantMessageId);
         }
       }
         
@@ -1429,68 +1114,13 @@ If no speech is detected, return '[No speech detected]'.` }
       setIsTranscribing(false);
       
       // Ensure the call loop continues even after errors
-      if (isCallMode && !isSpeaking && !isRecording && !isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isLoopRestartPendingRef.current) {
-        // If we're not speaking and not recording, and there's no queue, restart listening
-        isLoopRestartPendingRef.current = true;
+      if (isCallMode && !isSpeaking && !isRecording) {
         setTimeout(() => {
-          isLoopRestartPendingRef.current = false;
-          if (isCallMode && !isSpeaking && !isRecording && !isSpeakingQueueRef.current) {
+          if (isCallMode && !isSpeaking && !isRecording) {
             toggleRecording();
           }
         }, 1500);
       }
-    }
-  };
-
-  // --- TTS Logic ---
-  useEffect(() => {
-    if (!isCallMode) {
-      sentenceBufferRef.current = "";
-      processedSentencesRef.current.clear();
-      speakQueueRef.current = [];
-      return;
-    }
-
-    const assistantMessageId = Object.keys(streamingContent)[0];
-    if (!assistantMessageId) return;
-
-    const content = streamingContent[assistantMessageId];
-    if (!content) return;
-
-    // Detect sentences: . ! ? or \n
-    const sentences = content.split(/(?<=[.!?])\s+|\n+/);
-    
-    sentences.forEach(sentence => {
-      const trimmed = sentence.trim();
-      if (trimmed.length > 10 && !processedSentencesRef.current.has(trimmed)) {
-        // Only queue if it ends with punctuation or is long enough
-        if (/[.!?]$/.test(trimmed) || trimmed.length > 100) {
-          processedSentencesRef.current.add(trimmed);
-          queueSentence(trimmed, assistantMessageId);
-        }
-      }
-    });
-  }, [streamingContent, isCallMode]);
-
-  const queueSentence = async (text: string, messageId: string) => {
-    speakQueueRef.current.push(text);
-    if (!isSpeakingQueueRef.current) {
-      processSpeakQueue(messageId);
-    }
-  };
-
-  const processSpeakQueue = async (messageId: string) => {
-    if (speakQueueRef.current.length === 0) {
-      isSpeakingQueueRef.current = false;
-      return;
-    }
-
-    isSpeakingQueueRef.current = true;
-    const nextText = speakQueueRef.current.shift();
-    if (nextText) {
-      await speakText(nextText, messageId, () => {
-        processSpeakQueue(messageId);
-      });
     }
   };
 
@@ -1882,26 +1512,17 @@ If no speech is detected, return '[No speech detected]'.` }
     
     if (!textOverride) {
       setInput('');
-      setAttachedFiles([]);
     }
     setIsLoading(true);
-    setVerificationSteps([]);
 
     const assistantMessageId = generateId();
 
     try {
-      const { 
-        SYSTEM_INSTRUCTION, 
-        LUGANDA_SYSTEM_INSTRUCTION, 
-        RUNYANKORE_SYSTEM_INSTRUCTION 
-      } = await import('./constants/systemInstructions');
-      
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY_MISSING");
       }
       const ai = getAI();
-      addVerificationStep(language === 'en' ? "Analyzing legal intent..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
       
       const assistantMessage: Message = {
         id: assistantMessageId,
@@ -1921,9 +1542,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
       const systemPrompt = isDocumentMode 
         ? `${baseInstruction}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-        : isCallMode
-          ? `${baseInstruction}\n\nINTERACTIVE VOICE MODE: You are on a phone call. BE EXTREMELY BRIEF (1-2 sentences max). Be conversational and professional. NO LISTS. NO BULLET POINTS. Speak naturally like a human on a call. Respond in the same language as the user.`
-          : baseInstruction;
+        : baseInstruction;
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
@@ -1937,6 +1556,7 @@ If no speech is detected, return '[No speech detected]'.` }
       };
 
       if (!isCallMode) {
+        setVerificationSteps([]);
         addVerificationStep(language === 'en' ? "Analyzing statutory intent..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
         await new Promise(r => setTimeout(r, 800));
         
@@ -1965,130 +1585,68 @@ If no speech is detected, return '[No speech detected]'.` }
             tools: [] 
           } : modelConfig;
 
-          if (isStreamingMode) {
-            const stream = await ai.models.generateContentStream({
-              model: modelToUse,
-              contents: promptMessages.map(m => {
-                const parts: any[] = [];
-                if (m.attachments) {
-                  m.attachments.forEach(a => {
-                    parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
-                  });
-                }
-                parts.push({ text: m.content });
-                return {
-                  role: m.role === 'user' ? 'user' : 'model',
-                  parts
-                };
-              }),
-              config: currentConfig,
-            });
-
-            let fullText = "";
-
-            for await (const chunk of stream) {
-              if (chunk.functionCalls && !isFinalRetry) {
-                for (const call of chunk.functionCalls) {
-                  if (call.name === "generateLegalDocument") {
-                    const { content, format, title } = call.args as any;
-                    const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
-                    const successMsg = language === 'en' 
-                      ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                      : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                    fullText += successMsg;
-                    setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                  } else if (call.name === "generateLegalRoadmap") {
-                    const roadmapData = call.args as any;
-                    updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
-                  }
-                }
-                continue;
+          const stream = await ai.models.generateContentStream({
+            model: modelToUse,
+            contents: promptMessages.map(m => {
+              const parts: any[] = [];
+              if (m.attachments) {
+                m.attachments.forEach(a => {
+                  parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
+                });
               }
+              parts.push({ text: m.content });
+              return {
+                role: m.role === 'user' ? 'user' : 'model',
+                parts
+              };
+            }),
+            config: currentConfig,
+          });
 
-              if (chunk.text) {
-                fullText += chunk.text;
-                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                
-                const container = document.documentElement;
-                const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-                if (isNearBottom) {
-                  scrollToBottom();
-                }
-              }
-            }
-            
-            updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-            setStreamingContent(prev => {
-              const next = { ...prev };
-              delete next[assistantMessageId];
-              return next;
-            });
-            
-            if (isCallMode) {
-              const remaining = fullText.trim();
-              if (remaining && !processedSentencesRef.current.has(remaining)) {
-                queueSentence(remaining, assistantMessageId);
-              }
-              
-              const checkFinished = setInterval(() => {
-                if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
-                  clearInterval(checkFinished);
-                  if (isCallMode) toggleRecording();
-                }
-              }, 500);
-            }
-            success = true;
-          } else {
-            const response = await ai.models.generateContent({
-              model: modelToUse,
-              contents: promptMessages.map(m => {
-                const parts: any[] = [];
-                if (m.attachments) {
-                  m.attachments.forEach(a => {
-                    parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
-                  });
-                }
-                parts.push({ text: m.content });
-                return {
-                  role: m.role === 'user' ? 'user' : 'model',
-                  parts
-                };
-              }),
-              config: currentConfig,
-            });
+          let fullText = "";
 
-            let fullText = response.text || "";
-
-            if (response.functionCalls && !isFinalRetry) {
-              for (const call of response.functionCalls) {
+          for await (const chunk of stream) {
+            if (chunk.functionCalls && !isFinalRetry) {
+              for (const call of chunk.functionCalls) {
                 if (call.name === "generateLegalDocument") {
                   const { content, format, title } = call.args as any;
                   const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
                   const successMsg = language === 'en' 
                     ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
                     : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                  fullText = successMsg;
+                  fullText += successMsg;
+                  setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
                 } else if (call.name === "generateLegalRoadmap") {
                   const roadmapData = call.args as any;
                   updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
                 }
               }
+              continue;
             }
 
-            updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-            
-            if (isCallMode) {
-              queueSentence(fullText, assistantMessageId);
+            if (chunk.text) {
+              fullText += chunk.text;
+              setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
               
-              const checkFinished = setInterval(() => {
-                if (!isSpeakingQueueRef.current && speakQueueRef.current.length === 0 && !isSpeaking) {
-                  clearInterval(checkFinished);
-                  if (isCallMode) toggleRecording();
-                }
-              }, 500);
+              const container = document.documentElement;
+              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+              if (isNearBottom) {
+                scrollToBottom();
+              }
             }
-            success = true;
           }
+          
+          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
+          setStreamingContent(prev => {
+            const next = { ...prev };
+            delete next[assistantMessageId];
+            return next;
+          });
+          
+          if (isCallMode) {
+            speakText(fullText, assistantMessageId);
+          }
+          success = true;
         } catch (err: any) {
           const errStr = err?.message || String(err);
           console.warn(`Statum Retry [${retryCount+1}/${maxRetries}]:`, errStr);
@@ -2158,23 +1716,19 @@ If no speech is detected, return '[No speech detected]'.` }
   const quickQuestions = [
     { 
       en: "What are the fundamental rights in the Constitution?", 
-      lg: "Biki eby'obuntu ebiri mu nsonga z'eggwanga?",
-      nk: "Ebihagaro by'obuntu ebiri omu nshonga z'eihanga n'ebiha?"
+      lg: "Biki eby'obuntu ebiri mu nsonga z'eggwanga?"
     },
     { 
       en: "Explain the process of filing a civil suit in Uganda", 
-      lg: "Nnyonnyola enkola y'okuwaaba omusango mu Uganda",
-      nk: "Shoboorora oku omuntu arikubaasa kutaho omushango gw'abantu omu Uganda"
+      lg: "Nnyonnyola enkola y'okuwaaba omusango mu Uganda"
     },
     { 
       en: "What are the requirements for a valid contract?", 
-      lg: "Biki ebyetaagisa endagaano okuba entuufu?",
-      nk: "Ebyetaago by'endagaano eihikire n'ebiha?"
+      lg: "Biki ebyetaagisa endagaano okuba entuufu?"
     },
     { 
       en: "Draft a formal demand letter for breach of contract", 
-      lg: "Kola ebbaluwa ey'okusaba obusasuzi olw'okumenya endagaano",
-      nk: "Handiika ebaruha y'okushaba obuhasirizi ahabw'okutsigara aha ndagaano"
+      lg: "Kola ebbaluwa ey'okusaba obusasuzi olw'okumenya endagaano"
     },
   ];
 
@@ -2421,12 +1975,12 @@ If no speech is detected, return '[No speech detected]'.` }
               <Smartphone size={18} className="sm:w-5 sm:h-5" />
             </button>
             <button 
-              onClick={() => setLanguage(l => l === 'en' ? 'lg' : l === 'lg' ? 'nk' : 'en')}
+              onClick={() => setLanguage(l => l === 'en' ? 'lg' : 'en')}
               className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-[9px] sm:text-[10px] font-bold text-slate-600 transition-all uppercase tracking-[0.1em] border border-slate-200"
-              aria-label={language === 'en' ? "Switch to Luganda" : language === 'lg' ? "Kyusa okudda mu Runyankore" : "Kyusa okudda mu Lungereza"}
-              title={language === 'en' ? "Switch to Luganda" : language === 'lg' ? "Kyusa okudda mu Runyankore" : "Kyusa okudda mu Lungereza"}
+              aria-label={language === 'en' ? "Switch to Luganda" : "Switch to English"}
+              title={language === 'en' ? "Switch to Luganda" : "Switch to English"}
             >
-              {language === 'en' ? 'EN' : language === 'lg' ? 'LG' : 'NK'}
+              {language === 'en' ? 'EN' : 'LG'}
             </button>
           </div>
         </header>
@@ -2458,14 +2012,12 @@ If no speech is detected, return '[No speech detected]'.` }
                         <Scale size={32} className="sm:w-12 sm:h-12" />
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-display font-bold text-[#0B0F1A] tracking-tight leading-tight">
-                        {language === 'en' ? 'Statum AI' : language === 'lg' ? 'Statum AI' : 'Statum AI'}
+                        {language === 'en' ? 'Statum AI' : 'Statum AI'}
                       </h2>
                       <p className="text-base sm:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed px-4">
                         {language === 'en' 
                           ? 'Professional statutory guidance, document verification, and legal compliance analysis for the Ugandan jurisdiction.' 
-                          : language === 'lg'
-                          ? 'Okukulembera mu mateeka, okukakasa ebiwandiiko, n\'okukebera obutuufu bw\'amateeka mu Uganda.'
-                          : 'Obuhabuzi bw\'amateeka, okukakasa ebihandiiko, n\'okushwijuma amateeka omu Uganda.'}
+                          : 'Okukulembera mu mateeka, okukakasa ebiwandiiko, n\'okukebera obutuufu bw\'amateeka mu Uganda.'}
                       </p>
                     </motion.div>
 
@@ -2476,7 +2028,7 @@ If no speech is detected, return '[No speech detected]'.` }
                           initial={{ opacity: 0, scale: 0.98 }} 
                           animate={{ opacity: 1, scale: 1 }} 
                           transition={{ delay: i * 0.1 }} 
-                          onClick={() => handleSend(language === 'en' ? q.en : language === 'lg' ? q.lg : q.nk)} 
+                          onClick={() => handleSend(language === 'en' ? q.en : q.lg)} 
                           className="p-5 sm:p-8 text-left bg-white border border-slate-100 rounded-2xl sm:rounded-[2rem] hover:border-[#C5A059]/30 hover:shadow-2xl hover:shadow-[#C5A059]/10 transition-all group flex items-start gap-4 sm:gap-6"
                         >
                           <div className="p-3 sm:p-4 bg-slate-50 rounded-xl sm:rounded-2xl text-slate-500 group-hover:bg-[#0B0F1A] group-hover:text-[#C5A059] transition-all shrink-0 shadow-sm">
@@ -2487,7 +2039,7 @@ If no speech is detected, return '[No speech detected]'.` }
                           </div>
                           <div>
                             <p className="font-display font-bold text-base sm:text-lg text-[#0B0F1A] leading-snug group-hover:text-[#8B6E37] transition-colors mb-1 sm:mb-2">
-                              {language === 'en' ? q.en : language === 'lg' ? q.lg : q.nk}
+                              {language === 'en' ? q.en : q.lg}
                             </p>
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                               {language === 'en' ? 'Start inquiry' : language === 'lg' ? 'Tandika okubuuza' : 'Tandika okushaba'} <ArrowRight size={10} className="group-hover:translate-x-1 transition-transform" />
@@ -2538,7 +2090,7 @@ If no speech is detected, return '[No speech detected]'.` }
                               <MarkdownRenderer content={streamingContent[m.id] || m.content} />
                             </React.Suspense>
                           </div>
-                          {m.roadmap && <RoadmapComponent roadmap={m.roadmap} language={language} />}
+                          {m.roadmap && <RoadmapComponent roadmap={m.roadmap} language={language as 'en' | 'lg'} />}
                           <div className="flex items-center justify-between mt-4 sm:mt-6">
                             <div className={cn(
                               "text-[9px] sm:text-[10px] font-bold uppercase tracking-widest opacity-30"
@@ -2566,8 +2118,8 @@ If no speech is detected, return '[No speech detected]'.` }
                               >
                                 {copiedId === m.id ? <CheckCircle size={12} /> : <Copy size={12} />}
                                 {copiedId === m.id 
-                                  ? (language === 'en' ? 'Copied' : language === 'lg' ? 'Koppiddwa' : 'Koppiddwa')
-                                  : (language === 'en' ? 'Copy' : language === 'lg' ? 'Koppya' : 'Koppya')}
+                                  ? (language === 'en' ? 'Copied' : 'Koppiddwa')
+                                  : (language === 'en' ? 'Copy' : 'Koppya')}
                               </button>
                               <button 
                                 onClick={() => {
@@ -2578,7 +2130,7 @@ If no speech is detected, return '[No speech detected]'.` }
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-green-500/20 transition-all"
                               >
                                 <Share2 size={12} />
-                                {language === 'en' ? 'Share to WhatsApp' : language === 'lg' ? 'Gaba ku WhatsApp' : 'Gaba omu WhatsApp'}
+                                {language === 'en' ? 'Share to WhatsApp' : 'Gaba ku WhatsApp'}
                               </button>
                             </div>
                           </div>
@@ -2592,8 +2144,8 @@ If no speech is detected, return '[No speech detected]'.` }
             ) : activeTab === 'lawyers' ? (
               <div className="py-12 space-y-12">
                 <div className="text-center space-y-4">
-                  <h2 className="text-2xl sm:text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">{language === 'en' ? 'Verified Legal Advocates' : language === 'lg' ? 'Bapuliida Abakakasiddwa' : 'Bapuliida Abakakasiddwa'}</h2>
-                  <p className="text-slate-500 text-sm sm:text-lg max-w-xl mx-auto">{language === 'en' ? 'Consult with registered legal professionals for representation and specialized guidance.' : language === 'lg' ? 'Webuuze ku bakugu b\'amateeka abakakasiddwa.' : 'Webuuze aha bakugu b\'amateeka abakakasiddwa.'}</p>
+                  <h2 className="text-2xl sm:text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">{language === 'en' ? 'Verified Legal Advocates' : 'Bapuliida Abakakasiddwa'}</h2>
+                  <p className="text-slate-500 text-sm sm:text-lg max-w-xl mx-auto">{language === 'en' ? 'Consult with registered legal professionals for representation and specialized guidance.' : 'Webuuze ku bakugu b\'amateeka abakakasiddwa.'}</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {MOCK_LAWYERS.map(lawyer => (
@@ -2624,33 +2176,34 @@ If no speech is detected, return '[No speech detected]'.` }
                 </div>
               </div>
             ) : null}
-          </div>
-
-          {/* Verification Progress Bar */}
-          <AnimatePresence>
-            {isLoading && verificationSteps.length > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="fixed bottom-24 sm:bottom-32 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4"
-              >
-                <div className="bg-[#0B0F1A] text-white p-5 rounded-[2rem] shadow-2xl border border-white/10 flex items-center gap-5">
-                  <div className="relative w-12 h-12 shrink-0">
-                    <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
-                    <div className="absolute inset-0 border-4 border-[#C5A059] rounded-full border-t-transparent animate-spin" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <ShieldAlert size={20} className="text-[#C5A059]" />
+            
+            {/* Verification Progress Bar */}
+            <AnimatePresence>
+              {isLoading && verificationSteps.length > 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  className="fixed bottom-24 sm:bottom-32 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4"
+                >
+                  <div className="bg-[#0B0F1A] text-white p-5 rounded-[2rem] shadow-2xl border border-white/10 flex items-center gap-5">
+                    <div className="relative w-12 h-12 shrink-0">
+                      <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
+                      <div className="absolute inset-0 border-4 border-[#C5A059] rounded-full border-t-transparent animate-spin" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <ShieldAlert size={20} className="text-[#C5A059]" />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] mb-1">Verification in Progress</p>
+                      <p className="text-sm font-medium truncate text-slate-300">{verificationSteps[verificationSteps.length - 1]}</p>
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] mb-1">Verification in Progress</p>
-                    <p className="text-sm font-medium truncate text-slate-300">{verificationSteps[verificationSteps.length - 1]}</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
         </div>
 
       {/* Input Area */}
@@ -2672,165 +2225,84 @@ If no speech is detected, return '[No speech detected]'.` }
             )}
             <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-end gap-2 sm:gap-6">
               <div className="flex-1 relative bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200 focus-within:border-[#C5A059] focus-within:ring-4 sm:focus-within:ring-8 focus-within:ring-[#C5A059]/5 transition-all">
-                {isRecording ? (
-                  <div className="w-full flex items-center justify-between p-4 sm:p-6 bg-white rounded-2xl sm:rounded-[2rem] border-2 border-[#C5A059] shadow-lg">
-                    <div className="flex items-center gap-4">
-                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                      <span className="font-mono font-bold text-lg text-[#0B0F1A]">
-                        {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                      </span>
-                    </div>
-                    <Waveform />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={cancelRecording}
-                        className="p-3 bg-slate-200 text-slate-600 rounded-full hover:bg-slate-300 transition-all active:scale-95"
-                        title={language === 'en' ? "Cancel" : language === 'lg' ? "Sazaamu" : "Sazaamu"}
-                      >
-                        <X size={20} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={stopRecording}
-                        className="p-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 active:scale-95"
-                        title={language === 'en' ? "Stop & Send" : language === 'lg' ? "Yimiriza omuweereze" : "Yimiriza otweereze"}
-                      >
-                        <Square size={20} fill="currentColor" />
-                      </button>
-                    </div>
+                {attachedFiles.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 p-3 sm:p-4 border-b border-slate-100">
+                    {attachedFiles.map((file, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2 pr-1 shadow-sm group">
+                        {file.mimeType.startsWith('image/') ? (
+                          <ImageIcon size={16} className="text-[#C5A059]" />
+                        ) : (
+                          <FileIcon size={16} className="text-blue-500" />
+                        )}
+                        <span className="text-[10px] font-medium text-slate-600 truncate max-w-[100px]">{file.name}</span>
+                        <button 
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          className="p-2 text-slate-500 hover:text-red-500 transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ) : isTranscribing ? (
-                  <div className="w-full flex items-center justify-between p-4 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[2rem] border border-slate-200">
-                    <div className="flex items-center gap-3 text-[#C5A059]">
-                      <Loader2 size={24} className="animate-spin" />
-                      <span className="font-bold uppercase tracking-widest text-xs">
-                        {language === 'en' ? 'Transcribing...' : language === 'lg' ? 'Nkyusa eddoboozi...' : 'Nkuhandiika ebigambo...'}
-                      </span>
-                    </div>
+                )}
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder={language === 'en' ? "Enter legal inquiry..." : "Wandiika ekibuuzo kyo..."}
+                  className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
+                  rows={1}
+                />
+                <div className="flex items-center justify-between px-3 sm:px-6 pb-2 sm:pb-4">
+                  <div className="flex items-center gap-1.5 sm:gap-3">
                     <button 
                       type="button"
-                      onClick={() => {
-                        setIsTranscribing(false);
-                        setIsLoading(false);
-                      }}
-                      className="text-slate-500 hover:text-red-500 transition-colors p-2"
+                      onClick={() => setIsDocumentMode(!isDocumentMode)}
+                      className={cn(
+                        "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-bold uppercase tracking-widest transition-all",
+                        isDocumentMode ? "bg-[#C5A059] text-[#0B0F1A] shadow-lg shadow-[#C5A059]/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+                      )}
                     >
-                      <X size={20} />
+                      <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden xs:inline">{language === 'en' ? 'Document' : 'Ekiwandiiko'}</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-slate-500 hover:bg-slate-200 transition-all"
+                    >
+                      <Paperclip size={16} className="sm:w-5 sm:h-5" />
+                    </button>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleFileChange} 
+                      className="hidden" 
+                      multiple 
+                      accept="image/*,.pdf,.doc,.docx,.txt"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => handleQuickQuestion(language === 'en' ? "What are the common land disputes in Uganda?" : "Biki ebitalo by'ettaka ebiri mu Uganda?")}
+                      className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-slate-500 hover:bg-slate-200 transition-all font-bold text-[10px]"
+                    >
+                      {language === 'en' ? 'Common Disputes' : 'Okukaayana'}
                     </button>
                   </div>
-                ) : (
-                  <>
-                    {attachedFiles.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2 p-3 sm:p-4 border-b border-slate-100">
-                        {attachedFiles.map((file, i) => (
-                          <div key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2 pr-1 shadow-sm group">
-                            {file.mimeType.startsWith('image/') ? (
-                              <ImageIcon size={16} className="text-[#C5A059]" />
-                            ) : (
-                              <FileIcon size={16} className="text-blue-500" />
-                            )}
-                            <span className="text-[10px] font-medium text-slate-600 truncate max-w-[100px]">{file.name}</span>
-                            <button 
-                              type="button"
-                              onClick={() => removeFile(i)}
-                              className="p-2 text-slate-500 hover:text-red-500 transition-colors"
-                              aria-label={language === 'en' ? `Remove ${file.name}` : language === 'lg' ? `Ggyamu ${file.name}` : `Ihaaho ${file.name}`}
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ))}
-                        <button 
-                          type="button"
-                          onClick={() => handleSend(language === 'en' ? "Analyze these documents for statutory compliance and legal risks in Uganda." : language === 'lg' ? "Kebera ebiwandiiko bino olabe oba bituukana n'amateeka ga Uganda era olabe obuzibu obuyinza okubirimu." : "Shwijuma ebihandiiko ebi olabe amateeka ga Uganda era olabe oburemeezi oburimu.")}
-                          className="flex items-center gap-2 px-3 py-2 bg-[#0B0F1A] text-[#C5A059] rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-[#1a1f2e] transition-all shadow-lg shadow-[#0B0F1A]/10 ml-auto"
-                        >
-                          <ShieldCheck size={14} />
-                          {language === 'en' ? 'Scan Documents' : language === 'lg' ? 'Kebera ebiwandiiko' : 'Shwijuma Ebihandiiko'}
-                        </button>
-                      </div>
-                    )}
-                    <textarea
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                      placeholder={language === 'en' ? "Enter legal inquiry..." : language === 'lg' ? "Wandiika ekibuuzo kyo..." : "Handiika okushaba kwawe..."}
-                      aria-label={language === 'en' ? "Legal inquiry input" : language === 'lg' ? "Wandiika ekibuuzo kyo" : "Handiika okushaba kwawe"}
-                      className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
-                      rows={1}
-                    />
-                    <div className="flex items-center justify-between px-3 sm:px-6 pb-2 sm:pb-4">
-                      <div className="flex items-center gap-1.5 sm:gap-3">
-                        <button 
-                          type="button"
-                          onClick={() => setIsDocumentMode(!isDocumentMode)}
-                          className={cn(
-                            "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[10px] font-bold uppercase tracking-widest transition-all",
-                            isDocumentMode ? "bg-[#C5A059] text-[#0B0F1A] shadow-lg shadow-[#C5A059]/20" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
-                          )}
-                          aria-label={language === 'en' ? (isDocumentMode ? "Disable Document Mode" : "Enable Document Mode") : language === 'lg' ? (isDocumentMode ? "Ggyako Ekiwandiiko" : "Koleeza Ekiwandiiko") : (isDocumentMode ? "Ihaaho Ebihandiiko" : "Taho Ebihandiiko")}
-                        >
-                          <FileText size={12} className="sm:w-3.5 sm:h-3.5" />
-                          <span className="hidden xs:inline">{language === 'en' ? 'Document' : language === 'lg' ? 'Ekiwandiiko' : 'Ebihandiiko'}</span>
-                          <span className="xs:hidden">DOC</span>
-                        </button>
-                        <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
-                        <button 
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2.5 bg-[#C5A059] text-[#0B0F1A] rounded-lg sm:rounded-xl text-[9px] sm:text-[11px] font-bold uppercase tracking-widest hover:bg-[#8B6E37] transition-all shadow-lg shadow-[#C5A059]/20"
-                          title={language === 'en' ? "Scan or attach documents" : language === 'lg' ? "Kebera oba gattako fayiro" : "Shwijuma oba gattaho ebihandiiko"}
-                        >
-                          <Camera size={14} className="sm:w-4 sm:h-4" />
-                          <span>{language === 'en' ? 'Scan' : language === 'lg' ? 'Kebera' : 'Shwijuma'}</span>
-                        </button>
-                        <div className="h-4 sm:h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
-                        <button 
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-slate-500 hover:bg-slate-200 transition-all"
-                          title={language === 'en' ? "Attach files" : language === 'lg' ? "Gattako fayiro" : "Gattaho ebihandiiko"}
-                        >
-                          <Paperclip size={16} className="sm:w-5 sm:h-5" />
-                        </button>
-                        <input 
-                          type="file" 
-                          ref={fileInputRef} 
-                          onChange={handleFileChange} 
-                          className="hidden" 
-                          multiple 
-                          accept="image/*,.pdf,.doc,.docx,.txt"
-                        />
-                        <button 
-                          type="button"
-                          onClick={toggleRecording}
-                          className={cn(
-                            "p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl transition-all",
-                            "text-slate-500 hover:bg-slate-200"
-                          )}
-                          aria-label={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : language === 'lg' ? (isRecording ? "Yimiriza" : "Koleeza Eddoboozi") : (isRecording ? "Yimiriza" : "Tandika Okukwata Eddoboozi")}
-                          title={language === 'en' ? (isRecording ? "Stop Recording" : "Start Voice Recording") : language === 'lg' ? (isRecording ? "Yimiriza" : "Koleeza Eddoboozi") : (isRecording ? "Yimiriza" : "Tandika Okukwata Eddoboozi")}
-                        >
-                          <Mic size={16} className="sm:w-5 sm:h-5" />
-                        </button>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={!input.trim() || isLoading}
-                        className="p-2 sm:p-3.5 bg-[#0B0F1A] text-[#C5A059] rounded-lg sm:rounded-2xl hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-black/10 active:scale-95"
-                        aria-label={language === 'en' ? "Send Inquiry" : language === 'lg' ? "Sindiika" : "Tweereze"}
-                      >
-                        {isLoading ? <Loader2 size={18} className="animate-spin sm:w-6 sm:h-6" /> : <Send size={18} className="sm:w-6 sm:h-6" />}
-                      </button>
-                    </div>
-                  </>
-                )}
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || isLoading}
+                    className="p-2 sm:p-3.5 bg-[#0B0F1A] text-[#C5A059] rounded-lg sm:rounded-2xl hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-black/10 active:scale-95"
+                  >
+                    {isLoading ? <Loader2 size={18} className="animate-spin sm:w-6 sm:h-6" /> : <Send size={18} className="sm:w-6 sm:h-6" />}
+                  </button>
+                </div>
               </div>
             </form>
             <p className="text-[8px] sm:text-[10px] text-center text-slate-500 mt-3 sm:mt-6 font-bold uppercase tracking-[0.1em] px-4">
@@ -2850,15 +2322,16 @@ If no speech is detected, return '[No speech detected]'.` }
           <CallOverlay 
             onClose={() => {
               setIsCallMode(false);
+              if (isRecording) stopRecording();
             }}
-            isRecording={isLiveActive && !isLiveSpeaking}
-            isSpeaking={isLiveSpeaking}
+            isRecording={isRecording}
+            isSpeaking={!!isSpeaking}
             language={language}
             currentVolume={currentVolume}
             transcription={input || ""}
-            assistantResponse={streamingContent.live || ""}
-            isThinking={isLoading || (input.length > 0 && !isLiveSpeaking && streamingContent.live === "")}
-            isTranscribing={false}
+            assistantResponse={""}
+            isThinking={isLoading}
+            isTranscribing={isTranscribing}
             error={voiceError}
           />
         )}
