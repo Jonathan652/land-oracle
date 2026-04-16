@@ -1936,12 +1936,21 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       let retryCount = 0;
-      const maxRetries = 4; // Extra retry for hackathon safety
+      const maxRetries = 4; // High retry limit for demo
       let success = false;
-      let modelToUse = "gemini-3.1-pro-preview"; // Statum Ultra-Intelligence Brain
+      // Start with Flash 3.0: High intelligence but better availability than Pro for a demo
+      let modelToUse = "gemini-3-flash-preview"; 
 
       while (retryCount <= maxRetries && !success) {
         try {
+          // Final retry: Strip tools and model configs to bare minimum to avoid any parameter errors
+          const isFinalRetry = retryCount === maxRetries;
+          const currentConfig = isFinalRetry ? {
+            systemInstruction: systemPrompt,
+            temperature: 0.7,
+            maxOutputTokens: 1024
+          } : modelConfig;
+
           if (isStreamingMode) {
             const stream = await ai.models.generateContentStream({
               model: modelToUse,
@@ -1958,24 +1967,24 @@ If no speech is detected, return '[No speech detected]'.` }
                   parts
                 };
               }),
-              config: modelConfig,
+              config: currentConfig,
             });
 
             let fullText = "";
 
-            addVerificationStep(language === 'en' ? `Engaging Statum ${modelToUse.includes('pro') ? 'Ultra' : modelToUse.includes('flash-preview') ? 'Balanced' : 'Stable'} Brain...` : language === 'lg' ? "Okukozesa obwongo obw'amaanyi..." : "Okukozesa obwongo obuhame...");
+            addVerificationStep(language === 'en' 
+              ? `Engaging Statum ${modelToUse.includes('pro') ? 'Ultra' : modelToUse.includes('flash-preview') ? 'Expert' : 'Stable'} Brain...` 
+              : "Connecting to Statum Legal Oracle...");
 
             for await (const chunk of stream) {
-              if (chunk.functionCalls) {
+              if (chunk.functionCalls && !isFinalRetry) {
                 for (const call of chunk.functionCalls) {
                   if (call.name === "generateLegalDocument") {
                     const { content, format, title } = call.args as any;
                     const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
-                    
                     const successMsg = language === 'en' 
                       ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                      : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                    
+                      : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
                     fullText += successMsg;
                     setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
                   } else if (call.name === "generateLegalRoadmap") {
@@ -2018,6 +2027,7 @@ If no speech is detected, return '[No speech detected]'.` }
                 }
               }, 500);
             }
+            success = true;
           } else {
             const response = await ai.models.generateContent({
               model: modelToUse,
@@ -2034,21 +2044,19 @@ If no speech is detected, return '[No speech detected]'.` }
                   parts
                 };
               }),
-              config: modelConfig,
+              config: currentConfig,
             });
 
             let fullText = response.text || "";
 
-            if (response.functionCalls) {
+            if (response.functionCalls && !isFinalRetry) {
               for (const call of response.functionCalls) {
                 if (call.name === "generateLegalDocument") {
                   const { content, format, title } = call.args as any;
                   const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
-                  
                   const successMsg = language === 'en' 
                     ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                    : `\n\n✅ **Ekiwandiiko ky'amateeka kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                  
+                    : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
                   fullText = successMsg;
                 } else if (call.name === "generateLegalRoadmap") {
                   const roadmapData = call.args as any;
@@ -2069,48 +2077,43 @@ If no speech is detected, return '[No speech detected]'.` }
                 }
               }, 500);
             }
+            success = true;
           }
-          success = true;
         } catch (err: any) {
           const errStr = err?.message || String(err);
-          // Retry on any error during hackathon to ensure we eventually get a response
+          console.warn(`Statum Retry [${retryCount+1}/${maxRetries}]:`, errStr);
           if (retryCount < maxRetries) {
             retryCount++;
             
-            // Tiered intelligence fallback logic
             if (retryCount === 1) {
-              modelToUse = "gemini-3.1-pro-preview"; // Stay on Pro for first retry
-              addVerificationStep(language === 'en' ? "Optimizing Brain Connectivity..." : language === 'lg' ? "Okulongoosa obutebenkevu..." : "Okulongoosa obutebenkevu...");
+              modelToUse = "gemini-3.1-pro-preview"; // Try Pro if Flash failed
+              addVerificationStep(language === 'en' ? "Escalating to Statum Ultra-IQ Brain..." : "Improving Intelligence Density...");
             } else if (retryCount === 2) {
-              modelToUse = "gemini-3-flash-preview"; // Drop to high-quota Gemini 3 Flash
-              addVerificationStep(language === 'en' ? "Switching to Balanced Intelligence..." : language === 'lg' ? "Tufuula obwongo obukkakkamu..." : "Tukozesa obwongo obukkakkamu...");
+              modelToUse = "gemini-3.1-flash-lite-preview"; // High availability
+              addVerificationStep(language === 'en' ? "Optimizing Connection Speed..." : "Okulongoosa enkwatagana...");
             } else if (retryCount === 3) {
-              modelToUse = "gemini-3.1-flash-lite-preview"; // Drop to high-availability Gemini 3 Lite
-              addVerificationStep(language === 'en' ? "Deploying High-Availability Brain..." : language === 'lg' ? "Okukozesa obwongo obuluse..." : "Okukozesa obwongo obuluse...");
+              modelToUse = "gemini-flash-latest"; // Recovery stable
+              addVerificationStep(language === 'en' ? "Engaging Resilient Recovery Brain..." : "Okukozesa obwongo obukkakkamu...");
             } else if (retryCount === 4) {
-              modelToUse = "gemini-flash-latest"; // Final stable alias
-              addVerificationStep(language === 'en' ? "Engaging Resilient Recovery Engine..." : language === 'lg' ? "Okwongera amaanyi..." : "Okwongera amaanyi...");
+              modelToUse = "gemini-1.5-flash"; // Absolute last resort, bare config (as defined by currentConfig)
+              addVerificationStep(language === 'en' ? "Deploying Core Knowledge Engine..." : "Okumaliriza...");
             }
 
-            await new Promise(r => setTimeout(r, 1500 * retryCount));
+            await new Promise(r => setTimeout(r, 1000 * retryCount));
             continue;
           }
           throw err;
         }
       }
 
+      // Silent Firebase update - never let a counter fail the demo
       if (user && !isPro) {
         const userRef = doc(db, 'users', user.uid);
-        try {
-          const userSnap = await getDoc(userRef);
-          const currentUsed = userSnap.exists() ? (userSnap.data().freeQuestionsUsed || 0) : 0;
-          await updateDoc(userRef, { freeQuestionsUsed: currentUsed + 1 });
-          setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
-        } catch (error) {
-          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-        }
-      } else if (!user) {
-        setFreeQuestionsRemaining(prev => Math.max(0, prev - 1));
+        getDoc(userRef).then(snap => {
+           if (snap.exists()) {
+             updateDoc(userRef, { freeQuestionsUsed: (snap.data().freeQuestionsUsed || 0) + 1 }).catch(() => {});
+           }
+        }).catch(() => {});
       }
     } catch (error: any) {
       console.error(`Oracle Error:`, error);
