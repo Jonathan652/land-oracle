@@ -1927,10 +1927,10 @@ If no speech is detected, return '[No speech detected]'.` }
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
-        temperature: 0.2, // Slightly increased for fluid reasoning
-        maxOutputTokens: 8192, // Increased for pro-level reasoning and thinking
+        temperature: 0.2, 
+        maxOutputTokens: 8192, 
         tools: [
-          { googleSearch: {} },
+          ...(isDocumentMode ? [] : [{ googleSearch: {} }]),
           { functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }
         ],
         toolConfig: { includeServerSideToolInvocations: true }
@@ -1951,10 +1951,9 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       let retryCount = 0;
-      const maxRetries = 4; // High retry limit for demo
+      const maxRetries = 4; 
       let success = false;
-      // Start with Flash 3.0: High intelligence but better availability than Pro for a demo
-      let modelToUse = "gemini-3-flash-preview"; 
+      let modelToUse = "gemini-3.1-pro-preview"; 
 
       while (retryCount <= maxRetries && !success) {
         try {
@@ -1963,7 +1962,7 @@ If no speech is detected, return '[No speech detected]'.` }
             systemInstruction: systemPrompt,
             temperature: 0.7,
             maxOutputTokens: 2048,
-            tools: [] // Emergency strip: Bypass tool-calling overhead/errors
+            tools: [] 
           } : modelConfig;
 
           if (isStreamingMode) {
@@ -1987,16 +1986,12 @@ If no speech is detected, return '[No speech detected]'.` }
 
             let fullText = "";
 
-            addVerificationStep(language === 'en' 
-              ? `Pulse check: ${modelToUse}...` 
-              : "Laba omanyi bwa Statum...");
-
             for await (const chunk of stream) {
               if (chunk.functionCalls && !isFinalRetry) {
                 for (const call of chunk.functionCalls) {
                   if (call.name === "generateLegalDocument") {
                     const { content, format, title } = call.args as any;
-                    const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
+                    const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
                     const successMsg = language === 'en' 
                       ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
                       : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
@@ -2068,7 +2063,7 @@ If no speech is detected, return '[No speech detected]'.` }
               for (const call of response.functionCalls) {
                 if (call.name === "generateLegalDocument") {
                   const { content, format, title } = call.args as any;
-                  const url = format === 'pdf' ? generatePDF(content, title) : await generateDOCX(content, title);
+                  const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
                   const successMsg = language === 'en' 
                     ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
                     : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
@@ -2102,19 +2097,15 @@ If no speech is detected, return '[No speech detected]'.` }
             
             if (retryCount === 1) {
               modelToUse = "gemini-3-flash-preview"; 
-              addVerificationStep(language === 'en' ? "Staggering Retry..." : "Okulongoosa...");
               await new Promise(r => setTimeout(r, 2000));
             } else if (retryCount === 2) {
-              modelToUse = "gemini-3.1-pro-preview"; 
-              addVerificationStep(language === 'en' ? "Escalating Intelligence..." : "Okulongoosa...");
+              modelToUse = "gemini-3.1-flash-lite-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              modelToUse = "gemini-3.1-flash-lite-preview"; 
-              addVerificationStep(language === 'en' ? "Optimizing Latency..." : "Okulongoosa...");
+              modelToUse = "gemini-flash-latest"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 4) {
-              modelToUse = "gemini-flash-latest"; 
-              addVerificationStep(language === 'en' ? "Stable Core Recovery..." : "Okumaliriza...");
+              modelToUse = "gemini-1.5-flash"; 
               await new Promise(r => setTimeout(r, 500));
             }
 
