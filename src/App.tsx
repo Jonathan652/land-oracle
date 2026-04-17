@@ -1004,6 +1004,7 @@ If no speech is detected, return '[No speech detected]'.` }
         role: 'assistant',
         content: "",
         timestamp: new Date(),
+        modelId: "gemini-3-flash-preview"
       };
       
       updateSessionMessages(prev => [...prev, assistantMessage]);
@@ -1533,6 +1534,7 @@ If no speech is detected, return '[No speech detected]'.` }
         role: 'assistant',
         content: "",
         timestamp: new Date(),
+        modelId: "gemini-3-flash-preview"
       };
 
       // ADD MESSAGE TO UI BEFORE STREAMING
@@ -1618,13 +1620,9 @@ If no speech is detected, return '[No speech detected]'.` }
               }
             }
 
-            const groqIndicator = language === 'en' 
-              ? "\n\n*(Switched to Backup Engine for better reliability)*" 
-              : "\n\n*(Tukyusizza ku 'backup engine' okukuvaako obuzibu)*";
-            
-            const finalContent = finalOutput + groqIndicator;
+            const finalContent = finalOutput;
 
-            updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: finalContent } : m));
+            updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: finalContent, modelId: "groq-llama-3.3" } : m));
             setStreamingContent(prev => {
               const next = { ...prev };
               delete next[assistantMessageId];
@@ -1715,14 +1713,17 @@ If no speech is detected, return '[No speech detected]'.` }
             if (retryCount === 1) {
               // Try the advanced 'Pro' thinking model
               modelToUse = "gemini-3.1-pro-preview"; 
+              updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, modelId: "gemini-3.1-pro" } : m));
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
               // Try the 2.0 version
               modelToUse = "gemini-2.0-flash"; 
+              updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, modelId: "gemini-2.0-flash" } : m));
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
               // Gemini 3 Lite
               modelToUse = "gemini-3.1-flash-lite-preview"; 
+              updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, modelId: "gemini-3.1-lite" } : m));
             } else if (retryCount === 4) {
               // Final fallback to Groq handled at top of loop
             }
@@ -2170,9 +2171,14 @@ If no speech is detected, return '[No speech detected]'.` }
                           {m.roadmap && <RoadmapComponent roadmap={m.roadmap} language={language as 'en' | 'lg'} />}
                           <div className="flex items-center justify-between mt-4 sm:mt-6">
                             <div className={cn(
-                              "text-[9px] sm:text-[10px] font-bold uppercase tracking-widest opacity-30"
+                              "text-[9px] sm:text-[10px] font-bold uppercase tracking-widest opacity-30 flex items-center gap-2"
                             )}>
                               {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {m.modelId && (user?.email === 'musiimejonathan258@gmail.com' || user?.email === 'joblessbillionaire652@gmail.com') && (
+                                <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded text-[7px] border border-slate-300">
+                                  {m.modelId}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               <button 
