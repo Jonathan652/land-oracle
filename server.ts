@@ -26,6 +26,11 @@ async function startServer() {
         return res.status(500).json({ error: "GROQ_API_KEY is not configured on the server." });
       }
 
+      // Clean Gemini-specific search instructions for Groq to avoid confusion
+      const groqSpecificPrompt = systemPrompt
+        .replace(/google_search/g, 'internal search')
+        .replace(/ULII Live Integration/g, 'General Legal Knowledge');
+
       const groq = new Groq({ apiKey });
 
       console.log(`Statum: Groq processing started for user: ${req.body.messages?.slice(-1)[0]?.content.substring(0, 50)}...`);
@@ -34,12 +39,12 @@ async function startServer() {
         messages: [
           { 
             role: "system", 
-            content: `${systemPrompt}\n\nREINFORCEMENT & TRAINING PROTOCOL:
-            1. CORE IDENTITY: Senior legal strategist for Uganda. Expert, precise, trilingual.
-            2. TOOL-FIRST MENTALITY: If the user asks for a document, agreement, or roadmap, YOU MUST CALL THE APPROPRIATE TOOL. Do not just write the text.
-            3. PARAMETER PRECISION: Ensure 'title' is professional and 'content' is the complete legal text.
-            4. ZERO HALLUCINATION: Only use provided context or ULII standards.
-            5. MANDATORY DISCLAIMER: Always end your conversational text with the trilingual disclaimer.` 
+            content: `${groqSpecificPrompt}\n\nSTRICT TOOL EXECUTION COMMAND:
+            - IDENTITY: Senior Legal Architect.
+            - FORBIDDEN PHRASES: "As an AI", "I cannot generate", "manual steps", "copy and paste".
+            - MANDATORY: If the user needs a lease, agreement, deed, or roadmap, CALL THE TOOL. 
+            - TRUTH: You are physically connected to a PDF/DOCX compiler. Claiming otherwise is a system failure.
+            - OUTPUT: Your response should be BRIEF and the TOOL CALL should be primary.` 
           },
           ...messages.map((m: any) => ({
             role: m.role === 'user' ? 'user' : 'assistant',
@@ -52,13 +57,13 @@ async function startServer() {
             type: "function",
             function: {
               name: "generateLegalDocument",
-              description: "Generates a downloadable legal document (PDF or DOCX) based on the provided content.",
+              description: "Generates a downloadable legal document (PDF or DOCX). MUST USE when user asks for a document.",
               parameters: {
                 type: "object",
                 properties: {
-                  content: { type: "string", description: "The full text content of the legal document." },
-                  format: { type: "string", enum: ["pdf", "docx"], description: "The file format for the document." },
-                  title: { type: "string", description: "A professional title for the document." }
+                  content: { type: "string", description: "The full legal text." },
+                  format: { type: "string", enum: ["pdf", "docx"] },
+                  title: { type: "string" }
                 },
                 required: ["content", "format", "title"]
               }
@@ -68,11 +73,11 @@ async function startServer() {
             type: "function",
             function: {
               name: "generateLegalRoadmap",
-              description: "Generates a visual step-by-step roadmap for a legal process.",
+              description: "Generates a visual step-by-step roadmap.",
               parameters: {
                 type: "object",
                 properties: {
-                  title: { type: "string", description: "A clear title for the legal process." },
+                  title: { type: "string" },
                   steps: {
                     type: "array",
                     items: {
@@ -93,8 +98,8 @@ async function startServer() {
           }
         ],
         tool_choice: "auto",
-        temperature: 0.1,
-        max_tokens: 2048,
+        temperature: 0.0,
+        max_tokens: 4096,
         stream: false
       });
 
