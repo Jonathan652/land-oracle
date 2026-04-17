@@ -3,6 +3,8 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import Groq from "groq-sdk";
+import { GoogleGenAI } from "@google/genai";
+import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -15,6 +17,66 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Institutional Rate Limiting: Prevent "Denial of Wallet" attacks
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Pro level request limit reached. Please try again in 15 minutes." }
+  });
+
+  app.use("/api/", limiter);
+
+  // API Route for Gemini (Primary Intelligence)
+  app.post("/api/ai", async (req, res) => {
+    try {
+      const { model, contents, config, stream: isStreaming } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+
+      if (!apiKey) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      
+      if (isStreaming) {
+        // SSE (Server-Sent Events) style streaming
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        try {
+          const result = await ai.models.generateContentStream({
+            model: model,
+            contents: contents,
+            config: config
+          });
+
+          for await (const chunk of result) {
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          }
+          res.write('data: [DONE]\n\n');
+          res.end();
+        } catch (streamError: any) {
+          console.error("Stream error:", streamError);
+          res.write(`data: ${JSON.stringify({ error: streamError.message })}\n\n`);
+          res.end();
+        }
+      } else {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: contents,
+          config: config
+        });
+        res.json(response);
+      }
+    } catch (error: any) {
+      console.error("Gemini API Error:", error);
+      res.status(500).json({ error: error.message || "High-precision analysis failed" });
+    }
+  });
 
   // API Route for Groq Fallback
   app.post("/api/groq", async (req, res) => {

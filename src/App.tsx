@@ -154,12 +154,62 @@ const LegalIntelligenceBadge = () => (
   </div>
 );
 
-// --- Oracle Core ---
-const getAI = () => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) console.warn("GEMINI_API_KEY is missing from environment variables.");
-  return new GoogleGenAI({ apiKey: key || '' });
-};
+// --- Oracle Core (Secure Backend Proxy) ---
+const getAI = () => ({
+  models: {
+    generateContent: async (params: any) => {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "High-precision analysis failed");
+      }
+      return await response.json();
+    },
+    generateContentStream: async (params: any) => {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...params, stream: true })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Streaming analysis failed");
+      }
+      
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      return {
+        async *[Symbol.asyncIterator]() {
+          let buffer = "";
+          while (true) {
+            const { done, value } = await reader!.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('data: ')) {
+                const data = trimmed.slice(6);
+                if (data === '[DONE]') return;
+                try {
+                  yield JSON.parse(data);
+                } catch (e) {
+                  console.error("Parse error in stream:", e, data);
+                }
+              }
+            }
+          }
+        }
+      };
+    }
+  }
+});
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -1415,20 +1465,7 @@ If no speech is detected, return '[No speech detected]'.` }
   }, []);
 
   useEffect(() => {
-    if (!process.env.GEMINI_API_KEY) {
-      console.error("CRITICAL: GEMINI_API_KEY is missing from environment variables.");
-      const warningMessage: Message = {
-        id: 'api-warning',
-        role: 'assistant',
-        content: language === 'en' 
-          ? "⚠️ **Developer Note:** The Gemini API Key is missing. If you have deployed this to Vercel, please add `GEMINI_API_KEY` to your Environment Variables in the Vercel Dashboard."
-          : "⚠️ **Okulabula:** Gemini API Key ebula. Oba ogikozesezza ku Vercel, yongeramu `GEMINI_API_KEY` mu Environment Variables ku Vercel Dashboard.",
-        timestamp: new Date()
-      };
-      if (messages.length === 0) {
-        updateSessionMessages([warningMessage]);
-      }
-    }
+    // Legacy frontend checks removed for security hardening
   }, [language]);
 
   const handleQuickQuestion = (text: string) => {
