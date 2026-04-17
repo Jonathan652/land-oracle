@@ -1597,12 +1597,32 @@ If no speech is detected, return '[No speech detected]'.` }
               throw new Error(errData.error || "Groq backup failed");
             }
 
-            const { text } = await groqResponse.json();
+            const { text, toolCalls } = await groqResponse.json();
+            let finalOutput = text;
+
+            // Handle Groq Tool Calls for documents/roadmaps
+            if (toolCalls && toolCalls.length > 0) {
+              for (const call of toolCalls) {
+                if (call.function?.name === "generateLegalDocument") {
+                  const args = JSON.parse(call.function.arguments);
+                  const { content, format, title } = args;
+                  const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
+                  const successMsg = language === 'en' 
+                    ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                    : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                  finalOutput += successMsg;
+                } else if (call.function?.name === "generateLegalRoadmap") {
+                  const args = JSON.parse(call.function.arguments);
+                  updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: args } : m));
+                }
+              }
+            }
+
             const groqIndicator = language === 'en' 
               ? "\n\n*(Switched to Backup Engine for better reliability)*" 
               : "\n\n*(Tukyusizza ku 'backup engine' okukuvaako obuzibu)*";
             
-            const finalContent = text + groqIndicator;
+            const finalContent = finalOutput + groqIndicator;
 
             updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: finalContent } : m));
             setStreamingContent(prev => {
