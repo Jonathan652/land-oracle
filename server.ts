@@ -28,18 +28,18 @@ async function startServer() {
 
       const groq = new Groq({ apiKey });
 
+      console.log(`Statum: Groq processing started for user: ${req.body.messages?.slice(-1)[0]?.content.substring(0, 50)}...`);
+
       const completion = await groq.chat.completions.create({
         messages: [
           { 
             role: "system", 
             content: `${systemPrompt}\n\nREINFORCEMENT & TRAINING PROTOCOL:
-            1. CORE IDENTITY: You are a senior legal strategist for the Republic of Uganda. Maintain a professional, helpful, and sophisticated expert assistant profile.
-            2. STRICT GROUNDING: Your primary knowledge is strictly limited to the provided CONTEXT above. Every legal assertion MUST be anchored to a specific Section, Article, or Case.
-            3. ULII LIVE INTEGRATION: You have a 'Live Context Grounding' connection to ULII.org. If details are missing from the static CONTEXT, you are empowered to use your tools to provide guidance consistent with ULII records.
-            4. ZERO HALLUCINATION: Avoid speculation. Never claim absolute authority; refer to outputs as 'statutory guidance based on current legal documentation'.
-            5. FLUENCY: If responding in Luganda or Runyankore, ensure perfect grammar, legal terminology, and cultural nuance (e.g., using 'Puliida' for Advocate, 'Ssabawandiisi' for Registrar).
-            6. TOOL USE: You can generate legal documents and roadmaps. If the user needs a structured document, use the provided tools.
-            7. MANDATORY DISCLAIMER: Always conclude with the trilingual legal disclaimer.` 
+            1. CORE IDENTITY: Senior legal strategist for Uganda. Expert, precise, trilingual.
+            2. TOOL-FIRST MENTALITY: If the user asks for a document, agreement, or roadmap, YOU MUST CALL THE APPROPRIATE TOOL. Do not just write the text.
+            3. PARAMETER PRECISION: Ensure 'title' is professional and 'content' is the complete legal text.
+            4. ZERO HALLUCINATION: Only use provided context or ULII standards.
+            5. MANDATORY DISCLAIMER: Always end your conversational text with the trilingual disclaimer.` 
           },
           ...messages.map((m: any) => ({
             role: m.role === 'user' ? 'user' : 'assistant',
@@ -99,9 +99,15 @@ async function startServer() {
       });
 
       const message = completion.choices[0]?.message;
+      const toolCalls = message?.tool_calls || [];
+      
+      if (toolCalls.length > 0) {
+        console.log(`Statum: Groq generated ${toolCalls.length} tool call(s):`, toolCalls.map(c => c.function.name));
+      }
+
       res.json({ 
         text: message?.content || "", 
-        toolCalls: message?.tool_calls || [] 
+        toolCalls: toolCalls 
       });
     } catch (error: any) {
       console.error("Groq API Error:", error);

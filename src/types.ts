@@ -24,7 +24,6 @@ export interface Message {
   audioBuffer?: AudioBuffer;
   attachments?: Attachment[];
   roadmap?: Roadmap;
-  modelId?: string;
 }
 
 export interface ChatSession {
