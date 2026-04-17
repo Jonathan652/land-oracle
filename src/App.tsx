@@ -1550,7 +1550,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
-        temperature: 0.1, 
+        temperature: 0.2, 
         maxOutputTokens: 8192, 
         tools: [
           ...(isDocumentMode ? [] : [{ googleSearch: {} }]),
@@ -1575,14 +1575,14 @@ If no speech is detected, return '[No speech detected]'.` }
       }
 
       let retryCount = 0;
-      const maxRetries = 3; // Groq is now at Retry 3
+      const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-3-flash-preview"; // Fast and advanced model
+      let modelToUse = "gemini-3-flash-preview"; // Fast and advanced model (User Primary)
 
       while (retryCount <= maxRetries && !success) {
         try {
-          // FALLBACK TO GROQ (RETRY 3)
-          if (retryCount === 3) {
+          // FINAL FALLBACK: GROQ (RETRY 4)
+          if (retryCount === 4) {
             const groqResponse = await fetch('/api/groq', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1697,10 +1697,13 @@ If no speech is detected, return '[No speech detected]'.` }
               modelToUse = "gemini-3.1-pro-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              // Try the Gemini 3.1 Lite version
-              modelToUse = "gemini-3.1-flash-lite-preview"; 
+              // Try the 2.0 version
+              modelToUse = "gemini-2.0-flash"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
+              // Gemini 3 Lite
+              modelToUse = "gemini-3.1-flash-lite-preview"; 
+            } else if (retryCount === 4) {
               // Final fallback to Groq handled at top of loop
             }
 
