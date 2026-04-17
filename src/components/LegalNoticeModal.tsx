@@ -36,24 +36,24 @@ export const LegalNoticeModal: React.FC<LegalNoticeModalProps> = ({ isOpen, onAc
             <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 flex-1 overflow-y-auto custom-scrollbar">
               <div className="flex gap-4 sm:gap-5 items-start p-4 sm:p-6 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100">
                 <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-[#C5A059] shrink-0 mt-1" />
-                <div className="text-xs sm:text-sm text-slate-700 leading-relaxed">
+                <div className="text-xs sm:text-sm text-[#0B0F1A] leading-relaxed">
                   <p className="font-display font-bold text-[#0B0F1A] mb-1 sm:mb-2 text-sm sm:text-base">Statutory Intelligence Protocol</p>
-                  <p>This system operates on a high-precision legal intelligence engine designed to provide expert-level guidance on the Laws of Uganda.</p>
+                  <p className="font-medium opacity-90">This system operates on a high-precision legal intelligence engine designed to provide expert-level guidance on the Laws of Uganda.</p>
                 </div>
               </div>
 
-              <div className="space-y-4 sm:space-y-6 text-slate-600">
+              <div className="space-y-4 sm:space-y-6 text-[#0B0F1A]/80">
                 <div className="flex gap-3 sm:gap-4">
                   <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 text-[10px] sm:text-xs font-bold text-[#0B0F1A]">1</div>
-                  <p className="text-xs sm:text-sm leading-relaxed">Statum Legal analyzes the Constitution and Statutes of Uganda. Every output is anchored to actual statutory materials for maximum reliability.</p>
+                  <p className="text-xs sm:text-sm leading-relaxed font-medium">Statum Legal analyzes the Constitution and Statutes of Uganda. Every output is anchored to actual statutory materials for maximum reliability.</p>
                 </div>
                 <div className="flex gap-3 sm:gap-4">
                   <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 text-[10px] sm:text-xs font-bold text-[#0B0F1A]">2</div>
-                  <p className="text-xs sm:text-sm leading-relaxed">As with any high-level legal strategy, users may verify specific procedural details with advocates registered with the Uganda Law Society.</p>
+                  <p className="text-xs sm:text-sm leading-relaxed font-medium">As with any high-level legal strategy, users may verify specific procedural details with advocates registered with the Uganda Law Society.</p>
                 </div>
                 <div className="flex gap-3 sm:gap-4">
                   <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 text-[10px] sm:text-xs font-bold text-[#0B0F1A]">3</div>
-                  <p className="text-xs sm:text-sm leading-relaxed">Document generation provides professional-grade drafts based on statutory standards and current Ugandan legal scholarship.</p>
+                  <p className="text-xs sm:text-sm leading-relaxed font-medium">Document generation provides professional-grade drafts based on statutory standards and current Ugandan legal scholarship.</p>
                 </div>
               </div>
 

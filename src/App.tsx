@@ -2182,8 +2182,8 @@ If no speech is detected, return '[No speech detected]'.` }
                             </div>
                           )}
                           <div className={cn(
-                            "markdown-body prose prose-slate prose-sm max-w-none text-sm sm:text-base",
-                            m.role === 'assistant' && "font-serif"
+                            "markdown-body prose prose-sm max-w-none text-sm sm:text-base",
+                            m.role === 'user' ? "prose-invert text-white" : "prose-slate text-slate-800 font-serif"
                           )}>
                             <React.Suspense fallback={<div className="animate-pulse h-20 bg-slate-100 rounded-lg" />}>
                               <MarkdownRenderer content={streamingContent[m.id] || m.content} />
@@ -2355,7 +2355,7 @@ If no speech is detected, return '[No speech detected]'.` }
                     }
                   }}
                   placeholder={language === 'en' ? "Enter legal inquiry..." : "Wandiika ekibuuzo kyo..."}
-                  className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
+                  className="w-full bg-transparent border-none focus:ring-0 p-3 sm:p-6 text-sm sm:text-base text-[#0B0F1A] font-medium placeholder:text-slate-400 placeholder:font-normal resize-none min-h-[48px] sm:min-h-[64px] max-h-32 sm:max-h-48 custom-scrollbar font-sans"
                   rows={1}
                 />
                 <div className="flex items-center justify-between px-3 sm:px-6 pb-2 sm:pb-4">

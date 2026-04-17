@@ -19,19 +19,19 @@
   .safe-right { padding-right: env(safe-area-inset-right); }
 
   .markdown-body {
-    @apply text-slate-700 leading-relaxed font-sans;
+    @apply text-inherit leading-relaxed font-sans;
   }
 
   .markdown-body h1, .markdown-body h2, .markdown-body h3 {
-    @apply font-serif font-bold text-[#0B0F1A] mt-8 mb-4 tracking-tight uppercase;
+    @apply font-serif font-bold text-inherit mt-8 mb-4 tracking-tight uppercase;
   }
 
-  .markdown-body h1 { @apply text-3xl border-b-2 border-[#0B0F1A] pb-2; }
+  .markdown-body h1 { @apply text-3xl border-b-2 border-current pb-2; }
   .markdown-body h2 { @apply text-2xl border-b border-stone-200 pb-2 mb-6; }
   .markdown-body h3 { @apply text-xl text-[#8B6E37] border-l-4 border-[#C5A059] pl-3; }
 
   .markdown-body p {
-    @apply mb-6 text-[15px] sm:text-[17px] leading-relaxed font-serif text-slate-800 antialiased;
+    @apply mb-6 text-[15px] sm:text-[17px] leading-relaxed font-serif antialiased;
   }
 
   .markdown-body ul, .markdown-body ol {
