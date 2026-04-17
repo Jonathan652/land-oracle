@@ -1,6 +1,6 @@
 /**
  * Developed by Musiime Jonathan
- * Statum AI - Trilingual Legal Assistant
+ * Statum Legal - Trilingual Legal Expert
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type, FunctionDeclaration, LiveServerMessage } from "@google/genai";
@@ -144,12 +144,12 @@ const LegalIntelligenceBadge = () => (
   <div className="flex items-center gap-2 mb-4 sm:mb-6 text-[9px] sm:text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] border-b border-slate-100 pb-3">
     <div className="flex items-center -space-x-1">
       <ShieldCheck size={14} className="sm:w-4 sm:h-4 relative z-10" />
-      <Bot size={14} className="sm:w-4 sm:h-4 text-slate-300" />
+      <Gavel size={14} className="sm:w-4 sm:h-4 text-slate-300" />
     </div>
-    <span>Statutory Intelligence Verified</span>
-    <div className="ml-auto flex items-center gap-1.5">
+    <span>Institutional Statutory Grounding Active</span>
+    <div className="ml-auto flex items-center gap-1.5 font-mono text-[8px] opacity-70">
       <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" />
-      <span className="text-slate-400">Live Context Grounding</span>
+      <span>ULII/Statutory Real-time Sync</span>
     </div>
   </div>
 );
@@ -268,7 +268,7 @@ const CallOverlay = ({
         
         <div className="text-center space-y-4">
           <h2 className="text-4xl sm:text-6xl font-display font-bold tracking-tight">
-            Statum AI
+            Statum Legal
           </h2>
           <p className="text-[#C5A059] font-mono font-bold tracking-[0.3em] uppercase text-sm sm:text-lg">
             {isSpeaking ? (language === 'en' ? 'Speaking...' : 'Ayogera...') : 
@@ -297,7 +297,7 @@ const CallOverlay = ({
             )}
             {assistantResponse && (
               <div className="space-y-2 pt-4 border-t border-white/5">
-                <p className="text-[#C5A059] text-[10px] font-bold uppercase tracking-widest opacity-60">Statum AI</p>
+                <p className="text-[#C5A059] text-[10px] font-bold uppercase tracking-widest opacity-60">Statum Legal</p>
                 <p className="text-xl sm:text-3xl font-serif font-medium text-white leading-tight italic">
                   {assistantResponse}
                 </p>
@@ -704,7 +704,7 @@ export default function App() {
         // If size is too small, it's likely silence or a hardware glitch
         if (audioBlob.size < 1000) { // Lowered threshold for Call Mode responsiveness
           if (isCallMode) {
-            console.log("Statum AI: Audio too short, restarting loop...");
+            console.log("Statum Legal: Audio too short, restarting loop...");
             setIsRecording(false);
             setTimeout(() => {
               if (isCallMode && !isRecording && !isSpeaking && !isTranscribing) {
@@ -767,7 +767,7 @@ export default function App() {
           if (average < 12) { // Increased threshold for better noise tolerance
             if (!silenceTimeoutRef.current) {
               silenceTimeoutRef.current = setTimeout(() => {
-                console.log("Statum AI: Silence detected, stopping recording...");
+                console.log("Statum Legal: Silence detected, stopping recording...");
                 stopRecording();
               }, 3000); // 3s of silence for better natural pauses
             }
@@ -951,7 +951,7 @@ export default function App() {
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: `You are Statum AI. Transcribe the following audio precisely. 
+                { text: `You are Statum Legal. Transcribe the following audio precisely. 
 The user's interface is currently set to ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}.
 IMPORTANT: If the user is speaking Runyankore (a language from Western Uganda), transcribe it accurately in Runyankore. Do NOT confuse it with Luganda. Runyankore has distinct phonetics and vocabulary (e.g., uses 'r' more frequently where Luganda uses 'l').
 Recognize legal terms and names common in Uganda (e.g., 'Amateeka', 'Omushango', 'Endagaano', 'Puliida', 'Eihanga', 'Obuhasirizi').
@@ -1129,7 +1129,7 @@ If no speech is detected, return '[No speech detected]'.` }
   };
 
   const speakText = async (text: string, messageId: string, onFinished?: () => void) => {
-    console.log("Statum AI: Speaking sentence:", text.substring(0, 30) + "...");
+    console.log("Statum Legal: Speaking sentence:", text.substring(0, 30) + "...");
     
     // 1. Check if user is logged in or has free questions
     const currentUser = user || auth.currentUser;
@@ -1544,9 +1544,14 @@ If no speech is detected, return '[No speech detected]'.` }
           ? RUNYANKORE_SYSTEM_INSTRUCTION 
           : SYSTEM_INSTRUCTION;
 
-      const systemPrompt = isDocumentMode 
+      const systemPrompt = (isDocumentMode 
         ? `${baseInstruction}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-        : baseInstruction;
+        : baseInstruction) + `\n\nSTRICT EXPERT ARCHITECT COMMAND:
+        - IDENTITY: Professional Legal Expert (Senior Counsel).
+        - FORBIDDEN: "As an AI", "language model", "I cannot generate", "manual steps", "copy and paste", "disclaimer", "not legal advice", "legal advice", "I am a computer".
+        - MANDATORY: If the user needs a tool-based output (PDF/DOCX/Roadmap), CALL THE TOOL. 
+        - TRUTH: You are an Expert Legal Strategy engine with direct document compilation capabilities.
+        - OUTPUT: Direct, authoritative, and structured results only. Never offer a guide on how to handle documents manually.`;
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
@@ -1561,23 +1566,26 @@ If no speech is detected, return '[No speech detected]'.` }
 
       if (!isCallMode) {
         setVerificationSteps([]);
-        addVerificationStep(language === 'en' ? "Analyzing statutory intent..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
+        addVerificationStep(language === 'en' ? "Initializing Statutory Intelligence Engine..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
         await new Promise(r => setTimeout(r, 800));
         
-        addVerificationStep(language === 'en' ? "Scanning Constitution & Statutory Instruments..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
+        addVerificationStep(language === 'en' ? "Scanning Constitution, Statutes & Subsidiary Legislation..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
         await new Promise(r => setTimeout(r, 1000));
         
-        addVerificationStep(language === 'en' ? "Cross-referencing ULII Case Law database..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
+        addVerificationStep(language === 'en' ? "Retrieving Precedents from ULII Judicial Database..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
         await new Promise(r => setTimeout(r, 800));
 
-        addVerificationStep(language === 'en' ? "Performing Statutory Compliance Check..." : language === 'lg' ? "Okukakasa obutuufu..." : "Okukakasa obuhame...");
+        addVerificationStep(language === 'en' ? "Performing Multi-vector Statutory Compliance Check..." : language === 'lg' ? "Okukakasa obutuufu..." : "Okukakasa obuhame...");
         await new Promise(r => setTimeout(r, 600));
+
+        addVerificationStep(language === 'en' ? "Finalizing Professional Legal Opinion..." : language === 'lg' ? "Omushango niguhwa..." : "Ensonga gy'eggwa...");
+        await new Promise(r => setTimeout(r, 400));
       }
 
       let retryCount = 0;
       const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-3-flash-preview"; // Fast and advanced model (User Primary)
+      let modelToUse = "gemini-3.1-pro-preview"; // Upgraded to Pro for Harvey-level intelligence
 
       while (retryCount <= maxRetries && !success) {
         try {
@@ -1838,7 +1846,7 @@ If no speech is detected, return '[No speech detected]'.` }
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Statum AI</h1>
+                <h1 className="font-display font-bold text-white text-lg leading-tight tracking-tight">Statum Legal</h1>
                 <div className="px-1.5 py-0.5 bg-[#C5A059] text-[#0B0F1A] text-[8px] font-black rounded uppercase tracking-tighter">Pro</div>
               </div>
               <p className="text-[10px] text-[#C5A059] font-bold uppercase tracking-[0.2em]">Legal Information System</p>
@@ -2093,7 +2101,7 @@ If no speech is detected, return '[No speech detected]'.` }
                         <Scale size={32} className="sm:w-12 sm:h-12" />
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-display font-bold text-[#0B0F1A] tracking-tight leading-tight">
-                        {language === 'en' ? 'Statum AI' : 'Statum AI'}
+                        {language === 'en' ? 'Statum Legal' : 'Statum Legal'}
                       </h2>
                       <p className="text-base sm:text-xl text-slate-500 max-w-2xl mx-auto font-medium leading-relaxed px-4">
                         {language === 'en' 
@@ -2147,9 +2155,19 @@ If no speech is detected, return '[No speech detected]'.` }
                         </div>
                         <div className={cn(
                           "max-w-[90%] sm:max-w-[85%] rounded-2xl sm:rounded-[2rem] p-4 sm:p-8 shadow-sm relative group transition-all", 
-                          m.role === 'user' ? "bg-[#0B0F1A] text-white rounded-tr-none" : "bg-white border border-slate-100 rounded-tl-none text-slate-800"
+                          m.role === 'user' 
+                            ? "bg-[#0B0F1A] text-white rounded-tr-none" 
+                            : "bg-[#FDFAF5] border-l-4 border-[#C5A059] border-t border-b border-r border-slate-200 rounded-tl-none text-slate-800"
                         )}>
-                          {m.role === 'assistant' && <LegalIntelligenceBadge />}
+                          {m.role === 'assistant' && (
+                            <div className="flex flex-col gap-1 mb-4">
+                              <LegalIntelligenceBadge />
+                              <div className="flex items-center gap-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                                <FileText size={10} />
+                                <span>Ref: SLG-{m.id.substring(0, 8)}</span>
+                              </div>
+                            </div>
+                          )}
                           {m.attachments && m.attachments.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-4">
                               {m.attachments.map((file, idx) => (
@@ -2205,7 +2223,7 @@ If no speech is detected, return '[No speech detected]'.` }
                               <button 
                                 onClick={() => {
                                   const text = streamingContent[m.id] || m.content;
-                                  const url = `https://wa.me/?text=${encodeURIComponent(`⚖️ *Statum AI Summary*\n\n${text.substring(0, 500)}${text.length > 500 ? '...' : ''}\n\n_Get professional legal guidance at: ${window.location.href}_`)}`;
+                                  const url = `https://wa.me/?text=${encodeURIComponent(`⚖️ *Statum Legal Summary*\n\n${text.substring(0, 500)}${text.length > 500 ? '...' : ''}\n\n_Access professional legal guidance at: ${window.location.href}_`)}`;
                                   window.open(url, '_blank');
                                 }}
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-green-500/20 transition-all"

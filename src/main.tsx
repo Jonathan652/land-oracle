@@ -1,6 +1,6 @@
 /**
  * Developed by Musiime Jonathan
- * Statum AI - Trilingual Legal Assistant
+ * Statum Legal - Trilingual Legal Expert
  */
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';

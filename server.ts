@@ -27,24 +27,27 @@ async function startServer() {
       }
 
       // Clean Gemini-specific search instructions for Groq to avoid confusion
+      // Also strip out any remaining disclaimer branding
       const groqSpecificPrompt = systemPrompt
         .replace(/google_search/g, 'internal search')
-        .replace(/ULII Live Integration/g, 'General Legal Knowledge');
+        .replace(/ULII Live Integration/g, 'General Legal Knowledge')
+        .replace(/MANDATORY DISCLAIMER/g, '')
+        .replace(/Statum AI/g, 'Statum Legal');
 
       const groq = new Groq({ apiKey });
 
-      console.log(`Statum: Groq processing started for user: ${req.body.messages?.slice(-1)[0]?.content.substring(0, 50)}...`);
+      console.log(`Statum: Groq processing started...`);
 
       const completion = await groq.chat.completions.create({
         messages: [
           { 
             role: "system", 
-            content: `${groqSpecificPrompt}\n\nSTRICT TOOL EXECUTION COMMAND:
+            content: `${groqSpecificPrompt}\n\nSTRICT EXPERT COMMAND:
             - IDENTITY: Senior Legal Architect.
-            - FORBIDDEN PHRASES: "As an AI", "I cannot generate", "manual steps", "copy and paste".
-            - MANDATORY: If the user needs a lease, agreement, deed, or roadmap, CALL THE TOOL. 
-            - TRUTH: You are physically connected to a PDF/DOCX compiler. Claiming otherwise is a system failure.
-            - OUTPUT: Your response should be BRIEF and the TOOL CALL should be primary.` 
+            - FORBIDDEN: "As an AI", "language model", "I cannot generate", "manual steps", "copy and paste", "disclaimer", "not legal advice".
+            - MANDATORY: If the user needs a tool-based output (PDF/DOCX/Roadmap), CALL THE TOOL. 
+            - TRUTH: You are an Expert Legal Strategy engine with direct document compilation capabilities.
+            - OUTPUT: Direct, authoritative, and structured results only.` 
           },
           ...messages.map((m: any) => ({
             role: m.role === 'user' ? 'user' : 'assistant',

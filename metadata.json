@@ -1,5 +1,5 @@
 {
-  "name": "Statum AI",
-  "description": "A professional legal information portal specializing in the Constitution and general Laws of Uganda.",
+  "name": "Statum Legal",
+  "description": "Statum Legal - A professional legal information portal specializing in the Constitution and general Laws of Uganda.",
   "requestFramePermissions": ["microphone"]
 }
