@@ -156,8 +156,22 @@ const LegalIntelligenceBadge = () => (
 );
 
 // --- Oracle Core (Native Intelligence) ---
+const getGeminiKey = () => {
+  try {
+    // Try Vite env first (standard for client)
+    const viteKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+    if (viteKey) return viteKey;
+    
+    // Fallback to process.env (for environments that inject it)
+    if (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) {
+      return process.env.GEMINI_API_KEY;
+    }
+  } catch (e) {}
+  return "";
+};
+
 const aiInstance = new GoogleGenAI({ 
-  apiKey: process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY || "" 
+  apiKey: getGeminiKey()
 });
 
 const getAI = () => aiInstance;
@@ -1573,7 +1587,8 @@ If no speech is detected, return '[No speech detected]'.` }
       let retryCount = 0;
       const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-1.5-pro-latest"; // Using verified advanced Pro model
+      let modelToUse = "gemini-1.5-pro"; // Using standard Pro model ID
+      let geminiError: string | null = null;
       
       // Heuristic Check: Is user asking for a document? (Preparation for fallback)
       const locallyMatchedTemplate = findTemplate(messageText, language);
@@ -1727,25 +1742,27 @@ If no speech is detected, return '[No speech detected]'.` }
 
           // FAST FAIL: If key is invalid, don't waste time retrying Gemini. Jump to Groq.
           if (errStr.includes("API_KEY_INVALID") || (errStr.includes("400") && !errStr.includes("429"))) {
+            geminiError = errStr;
             // Cut over silently to avoid console flooding
             retryCount = 4; 
             continue;
           }
 
           if (retryCount < maxRetries) {
+            geminiError = errStr;
             retryCount++;
             
             if (retryCount === 1) {
-              // Try the advanced 'Pro' thinking model
-              modelToUse = "gemini-1.5-pro-latest"; 
+              // Try Pro again with slight delay
+              modelToUse = "gemini-1.5-pro"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              // Try the 1.5 revision
-              modelToUse = "gemini-1.5-flash-8b"; 
+              // Try Flash
+              modelToUse = "gemini-1.5-flash"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              // Gemini 1.5 Flash
-              modelToUse = "gemini-1.5-flash"; 
+              // Try 8b (Lite)
+              modelToUse = "gemini-1.5-flash-8b"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 4) {
               // Final fallback to Groq handled at top of loop
@@ -1831,6 +1848,9 @@ If no speech is detected, return '[No speech detected]'.` }
           if (parsed.error?.message) detail = parsed.error.message;
         } catch(e) {}
         errorMessage += `\n\n[Details: ${detail.substring(0, 80)}...]`;
+        if (geminiError) {
+          errorMessage += `\n\n[Original Gemini Error: ${geminiError.substring(0, 80)}...]`;
+        }
       }
 
       // UPDATE EXISTING MESSAGE WITH ERROR
