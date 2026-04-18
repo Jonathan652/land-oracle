@@ -1573,7 +1573,7 @@ If no speech is detected, return '[No speech detected]'.` }
       let retryCount = 0;
       const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-3.1-pro-preview"; // Restoring the most advanced Pro intelligence
+      let modelToUse = "gemini-1.5-pro-latest"; // Using verified advanced Pro model
       
       // Heuristic Check: Is user asking for a document? (Preparation for fallback)
       const locallyMatchedTemplate = findTemplate(messageText, language);
@@ -1592,8 +1592,20 @@ If no speech is detected, return '[No speech detected]'.` }
             });
 
             if (!groqResponse.ok) {
-              const errData = await groqResponse.json();
-              throw new Error(errData.error || "Groq backup failed");
+              const contentType = groqResponse.headers.get("content-type");
+              if (contentType && contentType.includes("application/json")) {
+                const errData = await groqResponse.json();
+                throw new Error(errData.error || "Groq backup failed");
+              } else {
+                const textError = await groqResponse.text();
+                throw new Error(`Groq server error: ${textError.substring(0, 100)}`);
+              }
+            }
+
+            const contentType = groqResponse.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+              const textResp = await groqResponse.text();
+              throw new Error(`Invalid response from Groq server: ${textResp.substring(0, 100)}`);
             }
 
             const { text, toolCalls } = await groqResponse.json();
@@ -1725,15 +1737,16 @@ If no speech is detected, return '[No speech detected]'.` }
             
             if (retryCount === 1) {
               // Try the advanced 'Pro' thinking model
-              modelToUse = "gemini-3.1-pro-preview"; 
+              modelToUse = "gemini-1.5-pro-latest"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              // Try the 2.0 version
-              modelToUse = "gemini-2.0-flash"; 
+              // Try the 1.5 revision
+              modelToUse = "gemini-1.5-flash-8b"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              // Gemini 3 Lite
-              modelToUse = "gemini-3.1-flash-lite-preview"; 
+              // Gemini 1.5 Flash
+              modelToUse = "gemini-1.5-flash"; 
+              await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 4) {
               // Final fallback to Groq handled at top of loop
             }
