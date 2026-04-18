@@ -91,6 +91,7 @@ import {
 } from 'lucide-react';
 import { Message, ChatSession, Lawyer } from './types';
 import { MOCK_LAWYERS, SYSTEM_INSTRUCTION, LUGANDA_SYSTEM_INSTRUCTION, RUNYANKORE_SYSTEM_INSTRUCTION } from './constants/systemInstructions';
+import { findTemplate, LegalTemplate } from './constants/legalTemplates';
 
 const LegalNoticeModal = React.lazy(() => import('./components/LegalNoticeModal').then(m => ({ default: m.LegalNoticeModal })));
 const MarkdownRenderer = React.lazy(() => import('./components/MarkdownRenderer'));
@@ -1623,6 +1624,9 @@ If no speech is detected, return '[No speech detected]'.` }
       const maxRetries = 4; 
       let success = false;
       let modelToUse = "gemini-3.1-pro-preview"; // Upgraded to Pro for Harvey-level intelligence
+      
+      // Heuristic Check: Is user asking for a document? (Preparation for fallback)
+      const locallyMatchedTemplate = findTemplate(input, language);
 
       while (retryCount <= maxRetries && !success) {
         try {
@@ -1781,6 +1785,39 @@ If no speech is detected, return '[No speech detected]'.` }
           }
           throw err;
         }
+      }
+
+      // FINAL SAFETY VALVE: If everything failed but we have a local template, offer it.
+      if (!success && locallyMatchedTemplate) {
+        const fallbackId = generateId();
+        const fallbackText = language === 'en' 
+          ? `I apologize, our advanced AI reasoning engine is currently over-leveraged. However, as an expert legal system, I have prepared a standard **${locallyMatchedTemplate.title}** for you based on Ugandan law. You can download it below.`
+          : `Nneetongeza, sisobola kukozesa bwongo kati. Naye nteesezzawo **${locallyMatchedTemplate.title}** ey'omulembe okusinziira ku mateeka ga Uganda. Osobola okugitikkula wansi.`;
+        
+        const docUrl = await generatePDF(locallyMatchedTemplate.content, locallyMatchedTemplate.title);
+        const finalFallbackContent = `${fallbackText}\n\n[Download PDF](${docUrl})`;
+
+        const fallbackMessage: Message = {
+          id: fallbackId,
+          role: 'assistant',
+          content: finalFallbackContent,
+          timestamp: new Date()
+        };
+        updateSessionMessages(prev => [...prev, fallbackMessage]);
+      } else if (!success) {
+        // Absolute last resort error
+        const errorId = generateId();
+        const errorText = language === 'en'
+          ? "I am currently experiencing high volume and cannot process this request. Please try again in a few moments."
+          : "Tusisinkanye obuzibu obwamaanyi. Gezaako nate mu kaseera katono.";
+        
+        const errorMessage: Message = {
+          id: errorId,
+          role: 'assistant',
+          content: errorText,
+          timestamp: new Date()
+        };
+        updateSessionMessages(prev => [...prev, errorMessage]);
       }
 
       // Silent Firebase update - never let a counter fail the demo
