@@ -156,23 +156,15 @@ const LegalIntelligenceBadge = () => (
 );
 
 // --- Oracle Core (Native Intelligence) ---
-const getGeminiKey = () => {
-  try {
-    // Try Vite env first (standard for client)
-    const viteKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-    if (viteKey) return viteKey;
-    
-    // Fallback to process.env (for environments that inject it)
-    if (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) {
-      return process.env.GEMINI_API_KEY;
-    }
-  } catch (e) {}
-  return "";
-};
+const getGeminiKey = () => ""; // Always empty on client to prevent accidental exposure
 
-const aiInstance = new GoogleGenAI({ 
-  apiKey: getGeminiKey()
-});
+const aiInstance = {
+  models: {
+    generateContentStream: async () => {
+      throw new Error("Direct client-side models are disabled for security. Use backend endpoints.");
+    }
+  }
+} as any;
 
 const getAI = () => aiInstance;
 
@@ -1204,79 +1196,68 @@ If no speech is detected, return '[No speech detected]'.` }
         return;
       }
 
-      const response = await ttsAi.models.generateContentStream({
-        model: "gemini-3.1-flash-tts-preview",
-        contents: [{ parts: [{ text: cleanedText }] }],
-        config: { 
-          responseModalities: [Modality.AUDIO], 
-          speechConfig: { 
-            voiceConfig: { 
-              prebuiltVoiceConfig: { voiceName: 'Kore' } 
-            } 
-          } 
-        },
+      // --- BACKEND SECURE TTS ---
+      const ttsResponse = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanedText })
       });
+
+      if (!ttsResponse.ok) {
+        throw new Error("Voice synthesis backend failed.");
+      }
+
+      const reader = ttsResponse.body?.getReader();
+      if (!reader) throw new Error("Could not initialize voice reader.");
 
       let nextStartTime = audioContextRef.current.currentTime + 0.1;
       const accumulatedSamples: Float32Array[] = [];
       let totalSamplesCount = 0;
       let hasStarted = false;
 
-      for await (const chunk of response) {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
         if (isSpeakingCancelledRef.current) break;
         
-        const parts = chunk.candidates?.[0]?.content?.parts;
-        if (!parts) continue;
-
-        for (const part of parts) {
-          if (part.inlineData?.data) {
-            const base64Audio = part.inlineData.data;
-            const binaryString = atob(base64Audio);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-
-            const dataView = new DataView(bytes.buffer);
-            const numSamples = Math.floor(len / 2);
-            const float32 = new Float32Array(numSamples);
-            
-            for (let i = 0; i < numSamples; i++) {
-              float32[i] = dataView.getInt16(i * 2, true) / 32768;
-            }
-
-            accumulatedSamples.push(float32);
-            totalSamplesCount += numSamples;
-
-            const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 24000);
-            audioBuffer.getChannelData(0).set(float32);
-            
-            const source = audioContextRef.current.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(audioContextRef.current.destination);
-            
-            activeSourcesRef.current.push(source);
-            
-            const startTime = Math.max(nextStartTime, audioContextRef.current.currentTime);
-            source.start(startTime);
-            nextStartTime = startTime + audioBuffer.duration;
-
-            if (!hasStarted) {
-              setIsSpeaking(messageId);
-              setIsAudioLoading(null);
-              hasStarted = true;
-            }
-
-            source.onended = () => {
-              activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
-              if (activeSourcesRef.current.length === 0 && !isSpeakingCancelledRef.current) {
-                setIsSpeaking(null);
-                if (onFinished) onFinished();
-              }
-            };
-          }
+        const bytes = value; 
+        const len = bytes.length;
+        const dataView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const numSamples = Math.floor(len / 2);
+        const float32 = new Float32Array(numSamples);
+        
+        for (let i = 0; i < numSamples; i++) {
+          float32[i] = dataView.getInt16(i * 2, true) / 32768;
         }
+
+        accumulatedSamples.push(float32);
+        totalSamplesCount += numSamples;
+
+        const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 24000);
+        audioBuffer.getChannelData(0).set(float32);
+        
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContextRef.current.destination);
+        activeSourcesRef.current.push(source);
+        
+        const startTime = Math.max(nextStartTime, audioContextRef.current.currentTime);
+        source.start(startTime);
+        nextStartTime = startTime + audioBuffer.duration;
+
+        if (!hasStarted) {
+          setIsSpeaking(messageId);
+          setIsAudioLoading(null);
+          hasStarted = true;
+        }
+
+        source.onended = () => {
+          activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
+          if (activeSourcesRef.current.length === 0 && !isSpeakingCancelledRef.current) {
+            setIsSpeaking(null);
+            if (onFinished) onFinished();
+          }
+        };
       }
 
       if (totalSamplesCount > 0 && !isSpeakingCancelledRef.current) {
@@ -1674,64 +1655,77 @@ If no speech is detected, return '[No speech detected]'.` }
             tools: [] 
           } : modelConfig;
 
-          // ADD TIMEOUT GUARD: Prevent forever 'verifying' state
-          const fetchPromise = ai.models.generateContentStream({
-            model: modelToUse,
-            contents: promptMessages.map(m => {
-              const parts: any[] = [];
-              if (m.attachments) {
-                m.attachments.forEach(a => {
-                  parts.push({ inlineData: { data: a.data, mimeType: a.mimeType } });
-                });
-              }
-              parts.push({ text: m.content });
-              return {
-                role: m.role === 'user' ? 'user' : 'model',
-                parts
-              };
-            }),
-            config: currentConfig,
+          // BACKEND GEMINI CALL (SECURE MODE)
+          const geminiResponse = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: promptMessages,
+              systemInstruction: systemPrompt,
+              model: modelToUse,
+              config: currentConfig,
+              tools: modelConfig.tools
+            })
           });
 
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("AI_TIMEOUT: Response took too long to initialize")), 45000)
-          );
+          if (!geminiResponse.ok) {
+            const errData = await geminiResponse.json();
+            throw new Error(errData.error || "Gemini backend failed");
+          }
 
-          const stream = await Promise.race([fetchPromise, timeoutPromise]) as any;
-
+          const reader = geminiResponse.body?.getReader();
+          if (!reader) throw new Error("Failed to initialize backend stream reader.");
+          
+          const decoder = new TextDecoder();
           let fullText = "";
 
-          for await (const chunk of stream) {
-            // Once we get a chunk, clear the visual verification overlay
-            if (verificationSteps.length > 0) {
-              setVerificationSteps([]);
-            }
-            if (chunk.functionCalls && !isFinalRetry) {
-              for (const call of chunk.functionCalls) {
-                if (call.name === "generateLegalDocument") {
-                  const { content, format, title } = call.args as any;
-                  const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
-                  const successMsg = language === 'en' 
-                    ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                    : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                  fullText += successMsg;
-                  setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                } else if (call.name === "generateLegalRoadmap") {
-                  const roadmapData = call.args as any;
-                  updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
-                }
-              }
-              continue;
-            }
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            
+            const chunkStr = decoder.decode(value);
+            const lines = chunkStr.split('\n');
+            
+            for (const line of lines) {
+              if (line.trim().startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.trim().slice(6));
+                  
+                  // Once we get data, clear the visual verification overlay
+                  if (verificationSteps.length > 0) {
+                    setVerificationSteps([]);
+                  }
 
-            if (chunk.text) {
-              fullText += chunk.text;
-              setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-              
-              const container = document.documentElement;
-              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-              if (isNearBottom) {
-                scrollToBottom();
+                  if (data.functionCalls && data.functionCalls.length > 0) {
+                    for (const call of data.functionCalls) {
+                      if (call.name === "generateLegalDocument") {
+                        const { content, format, title } = call.args as any;
+                        const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
+                        const successMsg = language === 'en' 
+                          ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                          : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                        fullText += successMsg;
+                        setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                      } else if (call.name === "generateLegalRoadmap") {
+                        const roadmapData = call.args as any;
+                        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+                      }
+                    }
+                  }
+
+                  if (data.text) {
+                    fullText += data.text;
+                    setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                    
+                    const container = document.documentElement;
+                    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+                    if (isNearBottom) {
+                      scrollToBottom();
+                    }
+                  }
+                } catch (e) {
+                  // Skip invalid JSON lines that might occur during stream hiccups
+                }
               }
             }
           }
@@ -1839,10 +1833,10 @@ If no speech is detected, return '[No speech detected]'.` }
           : "Ninyetegyereza obuzibu omu kukugarukamu.";
 
       // Check for common cross-device/production errors
-      if (errorStr.includes('API_KEY_INVALID') || errorStr.includes('API key not valid')) {
+      if (errorStr.includes('API_KEY_INVALID') || errorStr.includes('API key not valid') || errorStr.includes('key is missing')) {
         errorMessage = language === 'en'
-          ? "Configuration Error: The Gemini API Key is invalid or missing. Please check your AI Studio Secrets."
-          : "Obuzibu mu nteekateeka: API Key ya Gemini tennaba kuteekebwamu bulungi.";
+          ? "Configuration Error: The Gemini API Key is missing or invalid. If you have deployed this to Vercel or Cloud Run, you must add 'VITE_GEMINI_API_KEY' to your Environment Variables in the project settings."
+          : "Obuzibu mu nteekateeka: API Key ya Gemini tennaba kuteekebwamu bulungi mu 'Environment Variables'.";
       } else if (errorStr.includes('permission-denied') || errorStr.includes('insufficient permissions')) {
         errorMessage = language === 'en'
           ? "Security Error: Permission denied. If using a shared link, please ensure this domain is added to 'Authorized Domains' in your Firebase Console."
