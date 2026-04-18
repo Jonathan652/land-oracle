@@ -147,70 +147,20 @@ const LegalIntelligenceBadge = () => (
       <ShieldCheck size={14} className="sm:w-4 sm:h-4 relative z-10" />
       <Gavel size={14} className="sm:w-4 sm:h-4 text-slate-300" />
     </div>
-    <span>Institutional Statutory Grounding Active</span>
+    <span>Laws of Uganda (2023 Rev.)</span>
     <div className="ml-auto flex items-center gap-1.5 font-mono text-[8px] opacity-70">
       <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" />
-      <span>ULII/Statutory Real-time Sync</span>
+      <span>ULII Verified</span>
     </div>
   </div>
 );
 
-// --- Oracle Core (Secure Backend Proxy) ---
-const getAI = () => ({
-  models: {
-    generateContent: async (params: any) => {
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params)
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "High-precision analysis failed");
-      }
-      return await response.json();
-    },
-    generateContentStream: async (params: any) => {
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...params, stream: true })
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Streaming analysis failed");
-      }
-      
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      
-      return {
-        async *[Symbol.asyncIterator]() {
-          let buffer = "";
-          while (true) {
-            const { done, value } = await reader!.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || "";
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith('data: ')) {
-                const data = trimmed.slice(6);
-                if (data === '[DONE]') return;
-                try {
-                  yield JSON.parse(data);
-                } catch (e) {
-                  console.error("Parse error in stream:", e, data);
-                }
-              }
-            }
-          }
-        }
-      };
-    }
-  }
+// --- Oracle Core (Native Intelligence) ---
+const aiInstance = new GoogleGenAI({ 
+  apiKey: process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY || "" 
 });
+
+const getAI = () => aiInstance;
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -1219,7 +1169,7 @@ If no speech is detected, return '[No speech detected]'.` }
     setIsAudioLoading(messageId);
     
     try {
-      const ttsAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const ttsAi = getAI();
       
       // Clean text for better TTS performance and quality
       const cleanedText = text
@@ -1479,23 +1429,23 @@ If no speech is detected, return '[No speech detected]'.` }
 
   const generateLegalDocumentTool: FunctionDeclaration = {
     name: "generateLegalDocument",
-    description: "Generates a downloadable legal document (PDF or DOCX) based on the provided content.",
+    description: "ONLY call this if the user explicitly asks for a formal draft, document, or agreement. Generates a high-fidelity, professionally formatted Ugandan legal instrument.",
     parameters: {
       type: Type.OBJECT,
-      description: "The parameters for document generation.",
+      description: "The parameters for high-precision document drafting.",
       properties: {
         content: {
           type: Type.STRING,
-          description: "The full text content of the legal document. Exclude all conversational filler, greetings, and meta-commentary."
+          description: "Detailed legal text. MANDATORY: Use numbered clauses (1.0, 1.1), bold headers, formal party recitals (WHEREAS), and specific statutory citations (e.g., Land Act Chapter 236). No large text blocks or generic placeholders."
         },
         format: {
           type: Type.STRING,
           enum: ["pdf", "docx"],
-          description: "The file format for the document."
+          description: "The professional file format."
         },
         title: {
           type: Type.STRING,
-          description: "A professional title for the document."
+          description: "A formal title (e.g., DEED OF ASSIGNMENT, TENANCY AGREEMENT)."
         }
       },
       required: ["content", "format", "title"]
@@ -1504,7 +1454,7 @@ If no speech is detected, return '[No speech detected]'.` }
 
   const generateLegalRoadmapTool: FunctionDeclaration = {
     name: "generateLegalRoadmap",
-    description: "Generates a visual step-by-step roadmap for a legal process (e.g., land registration, filing a suit).",
+    description: "ONLY call this if the user asks for a 'roadmap' or 'steps' for a process. Generates a visual guide.",
     parameters: {
       type: Type.OBJECT,
       description: "The parameters for roadmap generation.",
@@ -1560,10 +1510,6 @@ If no speech is detected, return '[No speech detected]'.` }
     const assistantMessageId = generateId();
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("GEMINI_API_KEY_MISSING");
-      }
       const ai = getAI();
       
       const assistantMessage: Message = {
@@ -1582,22 +1528,26 @@ If no speech is detected, return '[No speech detected]'.` }
           ? RUNYANKORE_SYSTEM_INSTRUCTION 
           : SYSTEM_INSTRUCTION;
 
+      // INTENT DETECTION: Only provide document tools if user is in Document Mode OR asks for a draft
+      const documentKeywords = ['draft', 'document', 'agreement', 'contract', 'write', 'generate', 'create', 'ekiwandiiko', 'andika', 'okushaba'];
+      const userWantsDocument = isDocumentMode || documentKeywords.some(k => messageText.toLowerCase().includes(k));
+
       const systemPrompt = (isDocumentMode 
-        ? `${baseInstruction}\n\nSTRICT DOCUMENT MODE: Exclude all conversational text, greetings, and introductions. Start directly with the legal content.` 
-        : baseInstruction) + `\n\nSTRICT EXPERT ARCHITECT COMMAND:
+        ? `${baseInstruction}\n\nSTRICT DOCUMENT MODE: Your ONLY purpose is to generate a professional legal document. Do NOT include greetings, advice, or chat. Invoke the 'generateLegalDocument' tool immediately with high-quality content.` 
+        : `${baseInstruction}\n\nCHAT MODE: Provide an authoritative legal analysis of the user's inquiry. ONLY use document tools if the user specifically asks for a draft or roadmap in their message.`) + `\n\nSTRICT EXPERT ARCHITECT COMMAND:
         - IDENTITY: Professional Legal Expert (Senior Counsel).
         - FORBIDDEN: "As an AI", "language model", "I cannot generate", "manual steps", "copy and paste", "disclaimer", "not legal advice", "legal advice", "I am a computer".
-        - MANDATORY: If the user needs a tool-based output (PDF/DOCX/Roadmap), CALL THE TOOL. 
+        - TOOL USE: Only use 'generateLegalDocument' if the user specifically requests a formal document/draft. For all other inquiries, provide textual advice only.
         - TRUTH: You are an Expert Legal Strategy engine with direct document compilation capabilities.
-        - OUTPUT: Direct, authoritative, and structured results only. Never offer a guide on how to handle documents manually.`;
+        - OUTPUT: Direct, authoritative, and structured results only.`;
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
-        temperature: 0.2, 
+        temperature: 0.1, 
         maxOutputTokens: 8192, 
         tools: [
           ...(isDocumentMode ? [] : [{ googleSearch: {} }]),
-          { functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }
+          ...(userWantsDocument ? [{ functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }] : [])
         ],
         toolConfig: { includeServerSideToolInvocations: true }
       };
@@ -1623,10 +1573,10 @@ If no speech is detected, return '[No speech detected]'.` }
       let retryCount = 0;
       const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-3.1-pro-preview"; // Upgraded to Pro for Harvey-level intelligence
+      let modelToUse = "gemini-3.1-pro-preview"; // Restoring the most advanced Pro intelligence
       
       // Heuristic Check: Is user asking for a document? (Preparation for fallback)
-      const locallyMatchedTemplate = findTemplate(input, language);
+      const locallyMatchedTemplate = findTemplate(messageText, language);
 
       while (retryCount <= maxRetries && !success) {
         try {
@@ -1762,6 +1712,14 @@ If no speech is detected, return '[No speech detected]'.` }
         } catch (err: any) {
           const errStr = err?.message || String(err);
           console.warn(`Statum Retry [${retryCount+1}/${maxRetries}]:`, errStr);
+
+          // FAST FAIL: If key is invalid, don't waste time retrying Gemini. Jump to Groq.
+          if (errStr.includes("API_KEY_INVALID") || (errStr.includes("400") && !errStr.includes("429"))) {
+            // Cut over silently to avoid console flooding
+            retryCount = 4; 
+            continue;
+          }
+
           if (retryCount < maxRetries) {
             retryCount++;
             

@@ -3,7 +3,6 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import Groq from "groq-sdk";
-import { GoogleGenAI } from "@google/genai";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 
@@ -16,67 +15,21 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Essential for Cloud Run/Nginx environment to identify user IPs for rate limiting
+  app.set("trust proxy", 1);
+
   app.use(express.json());
 
   // Institutional Rate Limiting: Prevent "Denial of Wallet" attacks
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per window
+    max: 200, // Increased to 200 for robust testing
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Pro level request limit reached. Please try again in 15 minutes." }
   });
 
   app.use("/api/", limiter);
-
-  // API Route for Gemini (Primary Intelligence)
-  app.post("/api/ai", async (req, res) => {
-    try {
-      const { model, contents, config, stream: isStreaming } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY;
-
-      if (!apiKey) {
-        return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-      
-      if (isStreaming) {
-        // SSE (Server-Sent Events) style streaming
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-
-        try {
-          const result = await ai.models.generateContentStream({
-            model: model,
-            contents: contents,
-            config: config
-          });
-
-          for await (const chunk of result) {
-            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-          }
-          res.write('data: [DONE]\n\n');
-          res.end();
-        } catch (streamError: any) {
-          console.error("Stream error:", streamError);
-          res.write(`data: ${JSON.stringify({ error: streamError.message })}\n\n`);
-          res.end();
-        }
-      } else {
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: contents,
-          config: config
-        });
-        res.json(response);
-      }
-    } catch (error: any) {
-      console.error("Gemini API Error:", error);
-      res.status(500).json({ error: error.message || "High-precision analysis failed" });
-    }
-  });
 
   // API Route for Groq Fallback
   app.post("/api/groq", async (req, res) => {
@@ -100,6 +53,11 @@ async function startServer() {
 
       console.log(`Statum: Groq processing started...`);
 
+      // Intent check for tools to prevent unsolicited generation
+      const lastUserMessage = messages[messages.length - 1]?.content || "";
+      const documentKeywords = ['draft', 'document', 'agreement', 'contract', 'write', 'generate', 'create', 'ekiwandiiko', 'andika', 'okushaba'];
+      const userWantsDocument = documentKeywords.some(k => lastUserMessage.toLowerCase().includes(k));
+
       const completion = await groq.chat.completions.create({
         messages: [
           { 
@@ -107,7 +65,7 @@ async function startServer() {
             content: `${groqSpecificPrompt}\n\nSTRICT EXPERT COMMAND:
             - IDENTITY: Senior Legal Architect.
             - FORBIDDEN: "As an AI", "language model", "I cannot generate", "manual steps", "copy and paste", "disclaimer", "not legal advice".
-            - MANDATORY: If the user needs a tool-based output (PDF/DOCX/Roadmap), CALL THE TOOL. 
+            - TOOL USE: Only use document tools if the user explicitly requests a formal draft. For all other inquiries, provide a detailed textual response.
             - TRUTH: You are an Expert Legal Strategy engine with direct document compilation capabilities.
             - OUTPUT: Direct, authoritative, and structured results only.` 
           },
@@ -117,12 +75,13 @@ async function startServer() {
           }))
         ],
         model: "llama-3.3-70b-versatile",
-        tools: [
+        temperature: 0.1,
+        tools: userWantsDocument ? [
           {
             type: "function",
             function: {
               name: "generateLegalDocument",
-              description: "Generates a downloadable legal document (PDF or DOCX). MUST USE when user asks for a document.",
+              description: "ONLY call this if the user explicitly asks for a formal draft, document, or agreement. Generates PDF or DOCX.",
               parameters: {
                 type: "object",
                 properties: {
@@ -138,7 +97,7 @@ async function startServer() {
             type: "function",
             function: {
               name: "generateLegalRoadmap",
-              description: "Generates a visual step-by-step roadmap.",
+              description: "ONLY call this if the user asks for a 'roadmap' or 'steps' for a process. Generates a visual guide.",
               parameters: {
                 type: "object",
                 properties: {
@@ -161,9 +120,8 @@ async function startServer() {
               }
             }
           }
-        ],
+        ] : undefined,
         tool_choice: "auto",
-        temperature: 0.0,
         max_tokens: 4096,
         stream: false
       });
