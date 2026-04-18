@@ -1669,8 +1669,25 @@ If no speech is detected, return '[No speech detected]'.` }
           });
 
           if (!geminiResponse.ok) {
-            const errData = await geminiResponse.json();
-            throw new Error(errData.error || "Gemini backend failed");
+            let errorDetail = "Intelligence Service Error";
+            try {
+              const contentType = geminiResponse.headers.get("content-type");
+              if (contentType && contentType.includes("application/json")) {
+                const errData = await geminiResponse.json();
+                errorDetail = errData.error || errorDetail;
+              } else {
+                const textError = await geminiResponse.text();
+                // If it's HTML (Vercel error), extract the title or first 100 chars
+                if (textError.includes('<html')) {
+                  errorDetail = "Vercel Server Error (Check Logs/Settings)";
+                } else {
+                  errorDetail = textError.substring(0, 100);
+                }
+              }
+            } catch (e) {
+              console.error("Diagnostic Parse Error:", e);
+            }
+            throw new Error(errorDetail);
           }
 
           const reader = geminiResponse.body?.getReader();
