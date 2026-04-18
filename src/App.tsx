@@ -1497,6 +1497,7 @@ If no speech is detected, return '[No speech detected]'.` }
   };
 
   const handleSend = async (textOverride?: string) => {
+    let geminiError: string | null = null;
     const messageText = textOverride || input;
     const currentFiles = [...attachedFiles];
     if (!messageText.trim() && currentFiles.length === 0) return;
@@ -1569,26 +1570,25 @@ If no speech is detected, return '[No speech detected]'.` }
       if (!isCallMode) {
         setVerificationSteps([]);
         addVerificationStep(language === 'en' ? "Initializing Statutory Intelligence Engine..." : language === 'lg' ? "Okukebera ekigendererwa..." : "Okushwijuma ekigyendererwa...");
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 400));
         
         addVerificationStep(language === 'en' ? "Scanning Constitution, Statutes & Subsidiary Legislation..." : language === 'lg' ? "Okukebera ensengeka y'eggwanga n'amateeka..." : "Okushwijuma amateeka n'ebihandiiko...");
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 500));
         
         addVerificationStep(language === 'en' ? "Retrieving Precedents from ULII Judicial Database..." : language === 'lg' ? "Okukakasa ebiwandiiko by'amateeka..." : "Okukakasa ebihandiiko by'amateeka...");
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 400));
 
         addVerificationStep(language === 'en' ? "Performing Multi-vector Statutory Compliance Check..." : language === 'lg' ? "Okukakasa obutuufu..." : "Okukakasa obuhame...");
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 300));
 
         addVerificationStep(language === 'en' ? "Finalizing Professional Legal Opinion..." : language === 'lg' ? "Omushango niguhwa..." : "Ensonga gy'eggwa...");
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 200));
       }
 
       let retryCount = 0;
       const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-1.5-pro"; // Using standard Pro model ID
-      let geminiError: string | null = null;
+      let modelToUse = "gemini-3.1-pro-preview"; // Restoring native environment Pro model
       
       // Heuristic Check: Is user asking for a document? (Preparation for fallback)
       const locallyMatchedTemplate = findTemplate(messageText, language);
@@ -1674,7 +1674,8 @@ If no speech is detected, return '[No speech detected]'.` }
             tools: [] 
           } : modelConfig;
 
-          const stream = await ai.models.generateContentStream({
+          // ADD TIMEOUT GUARD: Prevent forever 'verifying' state
+          const fetchPromise = ai.models.generateContentStream({
             model: modelToUse,
             contents: promptMessages.map(m => {
               const parts: any[] = [];
@@ -1692,9 +1693,19 @@ If no speech is detected, return '[No speech detected]'.` }
             config: currentConfig,
           });
 
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("AI_TIMEOUT: Response took too long to initialize")), 45000)
+          );
+
+          const stream = await Promise.race([fetchPromise, timeoutPromise]) as any;
+
           let fullText = "";
 
           for await (const chunk of stream) {
+            // Once we get a chunk, clear the visual verification overlay
+            if (verificationSteps.length > 0) {
+              setVerificationSteps([]);
+            }
             if (chunk.functionCalls && !isFinalRetry) {
               for (const call of chunk.functionCalls) {
                 if (call.name === "generateLegalDocument") {
@@ -1754,15 +1765,15 @@ If no speech is detected, return '[No speech detected]'.` }
             
             if (retryCount === 1) {
               // Try Pro again with slight delay
-              modelToUse = "gemini-1.5-pro"; 
+              modelToUse = "gemini-3.1-pro-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              // Try Flash
-              modelToUse = "gemini-1.5-flash"; 
+              // Try standard 3.1 Flash
+              modelToUse = "gemini-3.1-flash-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              // Try 8b (Lite)
-              modelToUse = "gemini-1.5-flash-8b"; 
+              // Try 3.0 Flash
+              modelToUse = "gemini-3-flash-preview"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 4) {
               // Final fallback to Groq handled at top of loop
