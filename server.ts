@@ -257,9 +257,13 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Statum Server (Hybrid AI Mode) active on http://localhost:${PORT}`);
-  });
+  if (process.env.VERCEL) {
+    console.log("Statum Server (Serverless Mode) initialized.");
+  } else {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Statum Server (Hybrid AI Mode) active on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
