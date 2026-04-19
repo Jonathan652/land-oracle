@@ -15,7 +15,7 @@ const getApiKey = () => {
   }
 };
 
-const flashModel = "gemini-1.5-flash";
+const flashModel = "gemini-3-flash-preview";
 let globalAi: GoogleGenAI | null = null;
 const getAI = () => {
   if (!globalAi) {
@@ -962,7 +962,7 @@ export default function App() {
         try {
           const ai = getAI();
           const transcriptionPromise = getAI().models.generateContent({
-            model: "gemini-1.5-flash",
+            model: "gemini-3-flash-preview",
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
@@ -1034,7 +1034,7 @@ If no speech is detected, return '[No speech detected]'.` }
         try {
           const ai = getAI();
           const streamPromise = getAI().models.generateContentStream({
-            model: "gemini-1.5-flash",
+            model: "gemini-3-flash-preview",
             contents: { 
               parts: [
                 { text: transcribedText }
@@ -1082,7 +1082,7 @@ If no speech is detected, return '[No speech detected]'.` }
       } else {
         const ai = getAI();
         const responsePromise = getAI().models.generateContent({
-          model: "gemini-1.5-flash",
+          model: "gemini-3-flash-preview",
           contents: { 
             parts: [
               { text: transcribedText }
@@ -1577,7 +1577,7 @@ If no speech is detected, return '[No speech detected]'.` }
       let retryCount = 0;
       const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-3.1-pro-preview"; // Restoring native environment Pro model
+      let modelToUse = "gemini-3.1-pro-preview"; // Default to Expert Reasoning
       
       // Heuristic Check: Is user asking for a document? (Preparation for fallback)
       const locallyMatchedTemplate = findTemplate(messageText, language);
@@ -1658,10 +1658,13 @@ If no speech is detected, return '[No speech detected]'.` }
           const isFinalRetry = retryCount === maxRetries - 1;
           const currentConfig = isFinalRetry ? {
             systemInstruction: systemPrompt,
-            temperature: 0.1,
+            temperature: 1, // Add some randomness to break loops on final retry
             maxOutputTokens: 2048,
             tools: [] 
-          } : modelConfig;
+          } : {
+            ...modelConfig,
+            systemInstruction: systemPrompt
+          };
 
           // FRONTEND GEMINI CALL (SECURE & FLASH SPEED)
           const contents = promptMessages.map(m => ({
@@ -1670,14 +1673,9 @@ If no speech is detected, return '[No speech detected]'.` }
           }));
 
           const response = await getAI().models.generateContentStream({
-            model: flashModel,
+            model: modelToUse,
             contents,
-            config: {
-              systemInstruction: systemPrompt,
-              temperature: 0.1,
-              maxOutputTokens: 8192,
-              tools: modelConfig.tools
-            }
+            config: currentConfig
           });
 
           // Once we get data, clear the visual verification overlay
@@ -1706,7 +1704,7 @@ If no speech is detected, return '[No speech detected]'.` }
             }
 
             try {
-              const text = chunk.text();
+              const text = chunk.text;
               if (text) {
                 fullText += text;
                 setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
