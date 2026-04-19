@@ -3,7 +3,11 @@
  * Statum Legal - Trilingual Legal Expert
  */
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Modality, Type, FunctionDeclaration, LiveServerMessage } from "@google/genai";
+import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
+
+// AI Initialization (Frontend Model)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const flashModel = "gemini-3-flash-preview";
 import { generatePDF, generateDOCX } from './lib/documentService';
 import { 
   auth, 
@@ -351,6 +355,7 @@ const CallOverlay = ({
     </motion.div>
   );
 };
+
 
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
@@ -1655,94 +1660,55 @@ If no speech is detected, return '[No speech detected]'.` }
             tools: [] 
           } : modelConfig;
 
-          // BACKEND GEMINI CALL (SECURE MODE)
-          const geminiResponse = await fetch('/api/gemini', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: promptMessages,
+          // FRONTEND GEMINI CALL (SECURE & FLASH SPEED)
+          const contents = promptMessages.map(m => ({
+            role: m.role === 'user' ? 'user' : 'model',
+            parts: [{ text: m.content }]
+          }));
+
+          const response = await ai.models.generateContentStream({
+            model: flashModel,
+            contents,
+            config: {
               systemInstruction: systemPrompt,
-              model: modelToUse,
-              config: currentConfig,
+              temperature: 0.1,
+              maxOutputTokens: 2048,
               tools: modelConfig.tools
-            })
+            }
           });
 
-          if (!geminiResponse.ok) {
-            let errorDetail = "Intelligence Service Error";
-            try {
-              const contentType = geminiResponse.headers.get("content-type");
-              if (contentType && contentType.includes("application/json")) {
-                const errData = await geminiResponse.json();
-                errorDetail = errData.error || errorDetail;
-              } else {
-                const textError = await geminiResponse.text();
-                // If it's HTML (Vercel error), extract the title or first 100 chars
-                if (textError.includes('<html')) {
-                  errorDetail = "Vercel Server Error (Check Logs/Settings)";
-                } else {
-                  errorDetail = textError.substring(0, 100);
-                }
-              }
-            } catch (e) {
-              console.error("Diagnostic Parse Error:", e);
-            }
-            throw new Error(errorDetail);
+          // Once we get data, clear the visual verification overlay
+          if (verificationSteps.length > 0) {
+            setVerificationSteps([]);
           }
 
-          const reader = geminiResponse.body?.getReader();
-          if (!reader) throw new Error("Failed to initialize backend stream reader.");
-          
-          const decoder = new TextDecoder();
           let fullText = "";
-
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            
-            const chunkStr = decoder.decode(value);
-            const lines = chunkStr.split('\n');
-            
-            for (const line of lines) {
-              if (line.trim().startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.trim().slice(6));
-                  
-                  // Once we get data, clear the visual verification overlay
-                  if (verificationSteps.length > 0) {
-                    setVerificationSteps([]);
-                  }
-
-                  if (data.functionCalls && data.functionCalls.length > 0) {
-                    for (const call of data.functionCalls) {
-                      if (call.name === "generateLegalDocument") {
-                        const { content, format, title } = call.args as any;
-                        const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
-                        const successMsg = language === 'en' 
-                          ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                          : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                        fullText += successMsg;
-                        setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                      } else if (call.name === "generateLegalRoadmap") {
-                        const roadmapData = call.args as any;
-                        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
-                      }
-                    }
-                  }
-
-                  if (data.text) {
-                    fullText += data.text;
-                    setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                    
-                    const container = document.documentElement;
-                    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-                    if (isNearBottom) {
-                      scrollToBottom();
-                    }
-                  }
-                } catch (e) {
-                  // Skip invalid JSON lines that might occur during stream hiccups
+          for await (const chunk of response) {
+            if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+              for (const call of chunk.functionCalls) {
+                if (call.name === "generateLegalDocument") {
+                  const { content, format, title } = call.args as any;
+                  const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
+                  const successMsg = language === 'en' 
+                    ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                    : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                  fullText += successMsg;
+                  setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                } else if (call.name === "generateLegalRoadmap") {
+                  const roadmapData = call.args as any;
+                  updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
                 }
+              }
+            }
+
+            if (chunk.text) {
+              fullText += chunk.text;
+              setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+              
+              const container = document.documentElement;
+              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+              if (isNearBottom) {
+                scrollToBottom();
               }
             }
           }
