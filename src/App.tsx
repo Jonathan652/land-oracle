@@ -1533,27 +1533,25 @@ If no speech is detected, return '[No speech detected]'.` }
           : SYSTEM_INSTRUCTION;
 
       // INTENT DETECTION: Only provide document tools if user is in Document Mode OR asks for a draft
-      const documentKeywords = ['draft', 'document', 'agreement', 'contract', 'write', 'generate', 'create', 'ekiwandiiko', 'andika', 'okushaba'];
+      const documentKeywords = ['draft', 'document', 'agreement', 'contract', 'write', 'generate', 'create', 'ekiwandiiko', 'andika', 'okushaba', 'agreement', 'ndagaano', 'kontulakti'];
       const userWantsDocument = isDocumentMode || documentKeywords.some(k => messageText.toLowerCase().includes(k));
 
       const systemPrompt = (isDocumentMode 
-        ? `${baseInstruction}\n\nSTRICT DOCUMENT MODE: Your ONLY purpose is to generate a professional legal document. Do NOT include greetings, advice, or chat. Invoke the 'generateLegalDocument' tool immediately with high-quality content.` 
-        : `${baseInstruction}\n\nCHAT MODE: Provide an authoritative legal analysis of the user's inquiry. ONLY use document tools if the user specifically asks for a draft or roadmap in their message.`) + `\n\nSTRICT EXPERT ARCHITECT COMMAND:
-        - IDENTITY: Professional Legal Expert (Senior Counsel).
-        - FORBIDDEN: "As an AI", "language model", "I cannot generate", "manual steps", "copy and paste", "disclaimer", "not legal advice", "legal advice", "I am a computer".
-        - TOOL USE: Only use 'generateLegalDocument' if the user specifically requests a formal document/draft. For all other inquiries, provide textual advice only.
-        - TRUTH: You are an Expert Legal Strategy engine with direct document compilation capabilities.
-        - OUTPUT: Direct, authoritative, and structured results only.`;
+        ? `${baseInstruction}\n\nSTRICT DOCUMENT MODE: Your ONLY purpose is to generate a professional legal document. Do NOT include greetings, advice, or chat. Invoke the 'generateLegalDocument' tool immediately with high-quality, comprehensive content.` 
+        : `${baseInstruction}\n\nCHAT MODE: Provide an authoritative legal analysis. IF the user's request involves a specific legal transaction (like a sale, lease, or appointment), PROACTIVELY offer or trigger the 'generateLegalDocument' tool to provide value.`) + `\n\nOFFICIAL PROTOCOL:
+        - NEVER output "I cannot generate documents". You have the 'generateLegalDocument' tool.
+        - ALWAYS use the tool for formal drafts. Do NOT write the draft in the chat window.
+        - IDENTITY: Statum Legal Expert System.
+        - TOOL TRIGGER: If 'userWantsDocument' is detected, proceed directly to tool invocation.`;
 
       const modelConfig = { 
         systemInstruction: systemPrompt,
         temperature: 0.1, 
         maxOutputTokens: 8192, 
         tools: [
-          ...(isDocumentMode ? [] : [{ googleSearch: {} }]),
+          ...(isDocumentMode ? [] : [{ googleSearchRetrieval: { dynamicRetrievalConfig: { mode: "MODE_DYNAMIC" as any, dynamicThreshold: 0.3 } } }]),
           ...(userWantsDocument ? [{ functionDeclarations: [generateLegalDocumentTool, generateLegalRoadmapTool] }] : [])
-        ],
-        toolConfig: { includeServerSideToolInvocations: true }
+        ]
       };
 
       if (!isCallMode) {
@@ -1685,21 +1683,22 @@ If no speech is detected, return '[No speech detected]'.` }
 
           let fullText = "";
           for await (const chunk of response) {
-            const part = chunk.candidates?.[0]?.content?.parts?.[0];
-            
-            if (part?.functionCall) {
-              const call = part.functionCall;
-              if (call.name === "generateLegalDocument") {
-                const { content, format, title } = call.args as any;
-                const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
-                const successMsg = language === 'en' 
-                  ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                  : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                fullText += successMsg;
-                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-              } else if (call.name === "generateLegalRoadmap") {
-                const roadmapData = call.args as any;
-                updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+            // Check for Tool Calls using the SDK helper (property access)
+            const calls = (chunk as any).functionCalls;
+            if (calls && calls.length > 0) {
+              for (const call of calls) {
+                if (call.name === "generateLegalDocument") {
+                  const { content, format, title } = call.args as any;
+                  const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
+                  const successMsg = language === 'en' 
+                    ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                    : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                  fullText += successMsg;
+                  setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                } else if (call.name === "generateLegalRoadmap") {
+                  const roadmapData = call.args as any;
+                  updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+                }
               }
             }
 
