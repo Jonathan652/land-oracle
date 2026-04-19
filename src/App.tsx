@@ -15,7 +15,7 @@ const getApiKey = () => {
   }
 };
 
-const flashModel = "gemini-3-flash-preview";
+const flashModel = "gemini-1.5-flash";
 let globalAi: GoogleGenAI | null = null;
 const getAI = () => {
   if (!globalAi) {
@@ -962,7 +962,7 @@ export default function App() {
         try {
           const ai = getAI();
           const transcriptionPromise = getAI().models.generateContent({
-            model: "gemini-3-flash-preview",
+            model: "gemini-1.5-flash",
             contents: { 
               parts: [
                 { inlineData: { data: base64Audio, mimeType: mimeType } }, 
@@ -1034,7 +1034,7 @@ If no speech is detected, return '[No speech detected]'.` }
         try {
           const ai = getAI();
           const streamPromise = getAI().models.generateContentStream({
-            model: "gemini-3-flash-preview",
+            model: "gemini-1.5-flash",
             contents: { 
               parts: [
                 { text: transcribedText }
@@ -1082,7 +1082,7 @@ If no speech is detected, return '[No speech detected]'.` }
       } else {
         const ai = getAI();
         const responsePromise = getAI().models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-1.5-flash",
           contents: { 
             parts: [
               { text: transcribedText }
@@ -1675,7 +1675,7 @@ If no speech is detected, return '[No speech detected]'.` }
             config: {
               systemInstruction: systemPrompt,
               temperature: 0.1,
-              maxOutputTokens: 2048,
+              maxOutputTokens: 8192,
               tools: modelConfig.tools
             }
           });
@@ -1687,32 +1687,38 @@ If no speech is detected, return '[No speech detected]'.` }
 
           let fullText = "";
           for await (const chunk of response) {
-            if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-              for (const call of chunk.functionCalls) {
-                if (call.name === "generateLegalDocument") {
-                  const { content, format, title } = call.args as any;
-                  const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
-                  const successMsg = language === 'en' 
-                    ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                    : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                  fullText += successMsg;
-                  setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                } else if (call.name === "generateLegalRoadmap") {
-                  const roadmapData = call.args as any;
-                  updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
-                }
+            const part = chunk.candidates?.[0]?.content?.parts?.[0];
+            
+            if (part?.functionCall) {
+              const call = part.functionCall;
+              if (call.name === "generateLegalDocument") {
+                const { content, format, title } = call.args as any;
+                const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
+                const successMsg = language === 'en' 
+                  ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                  : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                fullText += successMsg;
+                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+              } else if (call.name === "generateLegalRoadmap") {
+                const roadmapData = call.args as any;
+                updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
               }
             }
 
-            if (chunk.text) {
-              fullText += chunk.text;
-              setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-              
-              const container = document.documentElement;
-              const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-              if (isNearBottom) {
-                scrollToBottom();
+            try {
+              const text = chunk.text();
+              if (text) {
+                fullText += text;
+                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                
+                const container = document.documentElement;
+                const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+                if (isNearBottom) {
+                  scrollToBottom();
+                }
               }
+            } catch (e) {
+              // chunk might not have text if it's a function call
             }
           }
           
