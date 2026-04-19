@@ -1,6 +1,4 @@
-// Production Legal Gateway - v1.0.1
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import Groq from "groq-sdk";
@@ -20,9 +18,7 @@ app.set("trust proxy", 1);
 // Institutional Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
+  max: 300,
   message: { error: "Pro level request limit reached." }
 });
 
@@ -35,23 +31,33 @@ app.post("/api/gemini", async (req, res) => {
     const { messages, systemInstruction, model, config, tools } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY missing" });
+
     const genAI = new GoogleGenAI(apiKey);
-    const mToUse = (model || "").includes('gemini-3') ? model : "gemini-1.5-pro";
+    
+    // HACKATHON STABILITY CHANGE: Defaulting to 'flash' for speed to avoid Vercel 10s timeouts
+    const mToUse = "gemini-1.5-flash"; 
+    
     const modelInstance = genAI.getGenerativeModel({ model: mToUse, systemInstruction });
     const contents = messages.map((m: any) => ({
       role: m.role === 'user' ? 'user' : 'model',
       parts: m.attachments ? [...m.attachments.map((a: any) => ({ inlineData: { data: a.data, mimeType: a.mimeType } })), { text: m.content }] : [{ text: m.content }]
     }));
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     if (res.flushHeaders) res.flushHeaders();
-    const result = await modelInstance.generateContentStream({ contents, tools, generationConfig: config || { temperature: 0.1, maxOutputTokens: 8192 } });
+
+    const result = await modelInstance.generateContentStream({ 
+      contents, 
+      tools, 
+      generationConfig: config || { temperature: 0.1, maxOutputTokens: 8192 } 
+    });
+
     for await (const chunk of result.stream) {
       res.write(`data: ${JSON.stringify({ text: chunk.text(), functionCalls: chunk.functionCalls() })}\n\n`);
     }
     res.end();
   } catch (error: any) {
-    console.error("Gemini Error:", error);
     if (!res.headersSent) res.status(500).json({ error: error.message }); else res.end();
   }
 });
@@ -62,7 +68,7 @@ app.post("/api/tts", async (req, res) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY missing" });
     const genAI = new GoogleGenAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-tts-preview" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContentStream({ contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ["AUDIO"] as any, speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } as any } });
     res.setHeader("Content-Type", "application/octet-stream");
     for await (const chunk of result.stream) {
@@ -92,23 +98,10 @@ app.post("/api/groq", async (req, res) => {
   }
 });
 
-async function startServer() {
+// Deployment-Aware Startup
+if (!process.env.VERCEL) {
   const PORT = 3000;
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => { res.sendFile(path.join(distPath, "index.html")); });
-  }
-  if (process.env.VERCEL) {
-    console.log("Statum Server (Serverless Mode) initialized.");
-  } else {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Statum Server active on http://localhost:${PORT}`);
-    });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Statum Local Ready: http://localhost:${PORT}`);
+  });
 }
-
-startServer();
