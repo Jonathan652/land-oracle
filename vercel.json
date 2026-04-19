@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "comment": "Statum Legal Gateway Config",
   "rewrites": [
     {
       "source": "/api/(.*)",
