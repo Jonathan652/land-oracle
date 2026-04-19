@@ -6,8 +6,23 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
 
 // AI Initialization (Frontend Model)
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getApiKey = () => {
+  try {
+    // Vite will replace this literal if configured
+    return process.env.GEMINI_API_KEY || "";
+  } catch (e) {
+    return "";
+  }
+};
+
 const flashModel = "gemini-3-flash-preview";
+let globalAi: GoogleGenAI | null = null;
+const getAI = () => {
+  if (!globalAi) {
+    globalAi = new GoogleGenAI({ apiKey: getApiKey() });
+  }
+  return globalAi;
+};
 import { generatePDF, generateDOCX } from './lib/documentService';
 import { 
   auth, 
@@ -160,18 +175,6 @@ const LegalIntelligenceBadge = () => (
 );
 
 // --- Oracle Core (Native Intelligence) ---
-const getGeminiKey = () => ""; // Always empty on client to prevent accidental exposure
-
-const aiInstance = {
-  models: {
-    generateContentStream: async () => {
-      throw new Error("Direct client-side models are disabled for security. Use backend endpoints.");
-    }
-  }
-} as any;
-
-const getAI = () => aiInstance;
-
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 // --- Components ---
@@ -958,7 +961,7 @@ export default function App() {
       while (retries >= 0) {
         try {
           const ai = getAI();
-          const transcriptionPromise = ai.models.generateContent({
+          const transcriptionPromise = getAI().models.generateContent({
             model: "gemini-3-flash-preview",
             contents: { 
               parts: [
@@ -1030,7 +1033,7 @@ If no speech is detected, return '[No speech detected]'.` }
       if (isStreamingMode) {
         try {
           const ai = getAI();
-          const streamPromise = ai.models.generateContentStream({
+          const streamPromise = getAI().models.generateContentStream({
             model: "gemini-3-flash-preview",
             contents: { 
               parts: [
@@ -1078,7 +1081,7 @@ If no speech is detected, return '[No speech detected]'.` }
         }
       } else {
         const ai = getAI();
-        const responsePromise = ai.models.generateContent({
+        const responsePromise = getAI().models.generateContent({
           model: "gemini-3-flash-preview",
           contents: { 
             parts: [
@@ -1666,7 +1669,7 @@ If no speech is detected, return '[No speech detected]'.` }
             parts: [{ text: m.content }]
           }));
 
-          const response = await ai.models.generateContentStream({
+          const response = await getAI().models.generateContentStream({
             model: flashModel,
             contents,
             config: {
