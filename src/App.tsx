@@ -2290,6 +2290,20 @@ If no speech is detected, return '[No speech detected]'.` }
                                 <Share2 size={12} />
                                 {language === 'en' ? 'Share to WhatsApp' : 'Gaba ku WhatsApp'}
                               </button>
+                              {m.role === 'assistant' && (
+                                <button 
+                                  onClick={async () => {
+                                    const text = streamingContent[m.id] || m.content;
+                                    const firstLine = text.split('\n')[0].replace(/[#*]/g, '').trim();
+                                    const title = firstLine.length > 5 && firstLine.length < 60 ? firstLine : "Statum_Legal_Document";
+                                    await generatePDF(text, title);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#C5A059]/10 text-[#8B6E37] rounded-lg text-[9px] font-bold uppercase tracking-wider hover:bg-[#C5A059]/20 transition-all border border-[#C5A059]/30 shadow-sm"
+                                >
+                                  <Download size={12} />
+                                  {language === 'en' ? 'Download PDF' : 'Tikula PDF'}
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
