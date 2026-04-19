@@ -19,7 +19,7 @@
   .safe-right { padding-right: env(safe-area-inset-right); }
 
   .markdown-body {
-    @apply text-[#0B0F1A] leading-relaxed font-serif;
+    @apply text-current leading-relaxed font-serif;
   }
 
   .markdown-body h1 { 
@@ -28,22 +28,22 @@
   }
 
   .markdown-body h2 { 
-    @apply text-xl sm:text-2xl font-serif font-bold text-[#0B0F1A] mt-10 mb-6 uppercase tracking-wider; 
+    @apply text-xl sm:text-2xl font-serif font-bold text-inherit mt-10 mb-6 uppercase tracking-wider; 
     border-bottom: none;
   }
 
   .markdown-body h3 { 
-    @apply text-lg sm:text-xl font-serif font-bold text-[#0B0F1A] mt-8 mb-4 uppercase tracking-wide; 
+    @apply text-lg sm:text-xl font-serif font-bold text-inherit mt-8 mb-4 uppercase tracking-wide; 
     border: none;
     padding-left: 0;
   }
 
   .markdown-body p {
-    @apply mb-6 text-base sm:text-lg leading-relaxed font-serif antialiased text-[#1a1f2e];
+    @apply mb-6 text-base sm:text-lg leading-relaxed font-serif antialiased text-inherit;
   }
 
   .markdown-body strong {
-    @apply font-bold text-[#0B0F1A] uppercase tracking-wide;
+    @apply font-bold text-inherit uppercase tracking-wide;
   }
 
   .markdown-body ul, .markdown-body ol {
