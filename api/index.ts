@@ -1,5 +1,6 @@
 import express from "express";
 import Groq from "groq-sdk";
+import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -10,6 +11,40 @@ app.use(express.json());
 // Minimal health check for Vercel
 app.get("/api/health", (req, res) => {
   res.json({ status: "Ready" });
+});
+
+// --- SECURE GEMINI PROXY ---
+app.post("/api/gemini", async (req, res) => {
+  try {
+    const { model, contents, config } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: "GEMINI_API_KEY missing in server settings." });
+    }
+
+    const genAI = new GoogleGenAI({ apiKey });
+
+    // Note: To make it simple and avoid complex stream proxying, we send the full response
+    // but the frontend is already built for streaming. We'll simulate a stream for the frontend
+    // or just return the full result.
+    
+    const result = await genAI.models.generateContent({
+      model,
+      contents,
+      config
+    });
+
+    const text = result.text || "";
+    
+    // Extract function calls manually for the proxy response
+    const functionCalls = (result as any).functionCalls || [];
+
+    res.json({ text, functionCalls });
+  } catch (error: any) {
+    console.error("Gemini Proxy Error:", error);
+    res.status(500).json({ error: error.message || "Gemini Execution Failed" });
+  }
 });
 
 // --- THIN PROXY FOR GROQ (BACKUP MODEL) ---

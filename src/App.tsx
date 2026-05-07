@@ -3,26 +3,11 @@
  * Statum Legal - Trilingual Legal Expert
  */
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
+import { Type, FunctionDeclaration } from "@google/genai";
 
-// AI Initialization (Frontend Model)
-const getApiKey = () => {
-  try {
-    // Vite will replace this literal if configured
-    return process.env.GEMINI_API_KEY || "";
-  } catch (e) {
-    return "";
-  }
-};
-
+// AI Initialization (REMOVED FROM FRONTEND FOR SECURITY)
 const flashModel = "gemini-3-flash-preview";
-let globalAi: GoogleGenAI | null = null;
-const getAI = () => {
-  if (!globalAi) {
-    globalAi = new GoogleGenAI({ apiKey: getApiKey() });
-  }
-  return globalAi;
-};
+
 import { generatePDF, generateDOCX } from './lib/documentService';
 import { 
   auth, 
@@ -960,30 +945,34 @@ export default function App() {
 
       while (retries >= 0) {
         try {
-          const ai = getAI();
-          const transcriptionPromise = getAI().models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: { 
-              parts: [
-                { inlineData: { data: base64Audio, mimeType: mimeType } }, 
-                { text: `You are Statum Legal. Transcribe the following audio precisely. 
+          const apiResponse = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: "gemini-3-flash-preview",
+              contents: { 
+                parts: [
+                  { inlineData: { data: base64Audio, mimeType: mimeType } }, 
+                  { text: `You are Statum Legal. Transcribe the following audio precisely. 
 The user's interface is currently set to ${language === 'en' ? 'English' : language === 'lg' ? 'Luganda' : 'Runyankore'}.
 IMPORTANT: If the user is speaking Runyankore (a language from Western Uganda), transcribe it accurately in Runyankore. Do NOT confuse it with Luganda. Runyankore has distinct phonetics and vocabulary (e.g., uses 'r' more frequently where Luganda uses 'l').
 Recognize legal terms and names common in Uganda (e.g., 'Amateeka', 'Omushango', 'Endagaano', 'Puliida', 'Eihanga', 'Obuhasirizi').
 Return the transcription in the original language spoken. 
 If no speech is detected, return '[No speech detected]'.` }
-              ] 
-            },
-            config: {
-              temperature: 0.1,
-            }
+                ] 
+              },
+              config: {
+                temperature: 0.1,
+              }
+            })
           });
 
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Transcription timed out")), transcriptionTimeout)
-          );
+          if (!apiResponse.ok) {
+            const errData = await apiResponse.json();
+            throw new Error(errData.error || 'Transcription Proxy Failed');
+          }
 
-          transcriptionResponse = await Promise.race([transcriptionPromise, timeoutPromise]) as any;
+          transcriptionResponse = await apiResponse.json();
           break; // Success
         } catch (err: any) {
           console.warn(`Transcription attempt ${3 - retries} failed:`, err.message);
@@ -1032,37 +1021,34 @@ If no speech is detected, return '[No speech detected]'.` }
 
       if (isStreamingMode) {
         try {
-          const ai = getAI();
-          const streamPromise = getAI().models.generateContentStream({
-            model: "gemini-3-flash-preview",
-            contents: { 
-              parts: [
-                { text: transcribedText }
-              ] 
-            },
-            config: { 
-              systemInstruction: systemPrompt, 
-              temperature: 0.4 
-            },
+          const apiResponse = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: "gemini-3-flash-preview",
+              contents: { 
+                parts: [
+                  { text: transcribedText }
+                ] 
+              },
+              config: { 
+                systemInstruction: systemPrompt, 
+                temperature: 0.4 
+              },
+            })
           });
 
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Response timed out")), 30000)
-          );
-
-          const stream = await Promise.race([streamPromise, timeoutPromise]) as any;
-
-          let fullText = "";
-          for await (const chunk of stream) {
-            fullText += chunk.text || "";
-            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-            
-            const container = document.documentElement;
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-            if (isNearBottom) {
-              scrollToBottom();
-            }
+          if (!apiResponse.ok) {
+            const errData = await apiResponse.json();
+            throw new Error(errData.error || 'Gemini Proxy Failed');
           }
+
+          const resultStream = await apiResponse.json();
+          const { text } = resultStream;
+
+          let fullText = text || "";
+          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+          scrollToBottom();
           
           updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
           setStreamingContent(prev => {
@@ -1080,29 +1066,40 @@ If no speech is detected, return '[No speech detected]'.` }
           throw err;
         }
       } else {
-        const ai = getAI();
-        const responsePromise = getAI().models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: { 
-            parts: [
-              { text: transcribedText }
-            ] 
-          },
-          config: { 
-            systemInstruction: systemPrompt, 
-            temperature: 0.4 
-          },
-        });
+        try {
+          const apiResponse = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: "gemini-3-flash-preview",
+              contents: { 
+                parts: [
+                  { text: transcribedText }
+                ] 
+              },
+              config: { 
+                systemInstruction: systemPrompt, 
+                temperature: 0.4 
+              },
+            })
+          });
 
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Response timed out")), 30000)
-        );
+          if (!apiResponse.ok) {
+            const errData = await apiResponse.json();
+            throw new Error(errData.error || 'Gemini Proxy Failed');
+          }
 
-        const response = await Promise.race([responsePromise, timeoutPromise]) as any;
-        const fullText = response.text || "I apologize.";
-        updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
-        if (isCallMode) {
-          speakText(fullText, assistantMessageId);
+          const result = await apiResponse.json();
+          const responseText = result.text || "";
+          
+          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: responseText } : m));
+          
+          if (isCallMode) {
+            speakText(responseText, assistantMessageId);
+          }
+        } catch (err) {
+          console.error("Non-streaming error:", err);
+          throw err;
         }
       }
         
@@ -1183,8 +1180,6 @@ If no speech is detected, return '[No speech detected]'.` }
     setIsAudioLoading(messageId);
     
     try {
-      const ttsAi = getAI();
-      
       // Clean text for better TTS performance and quality
       const cleanedText = text
         .replace(/#{1,6}\s?/g, '')
@@ -1514,8 +1509,6 @@ If no speech is detected, return '[No speech detected]'.` }
     const assistantMessageId = generateId();
 
     try {
-      const ai = getAI();
-      
       const assistantMessage: Message = {
         id: assistantMessageId,
         role: 'assistant',
@@ -1664,17 +1657,29 @@ If no speech is detected, return '[No speech detected]'.` }
             systemInstruction: systemPrompt
           };
 
-          // FRONTEND GEMINI CALL (SECURE & FLASH SPEED)
+          // SECURE BACKEND GEMINI CALL
           const contents = promptMessages.map(m => ({
             role: m.role === 'user' ? 'user' : 'model',
             parts: [{ text: m.content }]
           }));
 
-          const response = await getAI().models.generateContentStream({
-            model: modelToUse,
-            contents,
-            config: currentConfig
+          const apiResponse = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: modelToUse,
+              contents,
+              config: currentConfig
+            })
           });
+
+          if (!apiResponse.ok) {
+            const errData = await apiResponse.json();
+            throw new Error(errData.error || 'Gemini Proxy Failed');
+          }
+
+          const resultStream = await apiResponse.json();
+          const { text, functionCalls } = resultStream;
 
           // Once we get data, clear the visual verification overlay
           if (verificationSteps.length > 0) {
@@ -1682,41 +1687,30 @@ If no speech is detected, return '[No speech detected]'.` }
           }
 
           let fullText = "";
-          for await (const chunk of response) {
-            // Check for Tool Calls using the SDK helper (property access)
-            const calls = (chunk as any).functionCalls;
-            if (calls && calls.length > 0) {
-              for (const call of calls) {
-                if (call.name === "generateLegalDocument") {
-                  const { content, format, title } = call.args as any;
-                  const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
-                  const successMsg = language === 'en' 
-                    ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                    : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                  fullText += successMsg;
-                  setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                } else if (call.name === "generateLegalRoadmap") {
-                  const roadmapData = call.args as any;
-                  updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
-                }
-              }
-            }
-
-            try {
-              const text = chunk.text;
-              if (text) {
-                fullText += text;
+          
+          // Handle Tool Calls returned from Proxy
+          if (functionCalls && functionCalls.length > 0) {
+            for (const call of functionCalls) {
+              if (call.name === "generateLegalDocument") {
+                const { content, format, title } = call.args as any;
+                const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
+                const successMsg = language === 'en' 
+                  ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                  : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                fullText += successMsg;
                 setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-                
-                const container = document.documentElement;
-                const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-                if (isNearBottom) {
-                  scrollToBottom();
-                }
+              } else if (call.name === "generateLegalRoadmap") {
+                const roadmapData = call.args as any;
+                updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
               }
-            } catch (e) {
-              // chunk might not have text if it's a function call
             }
+          }
+
+          // Handle Text Result
+          if (text) {
+            fullText += text;
+            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+            scrollToBottom();
           }
           
           updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
