@@ -1,19 +1,19 @@
 # 📊 Statum Legal: Project Execution Report
 **Date:** May 18, 2026
 **Project Phase:** MVP V1.2 (Architecture Hardening)
-**Prepared by:** AI Engineering Agent
+**Prepared by:** Jonathan
 
 ---
 
 ## 1. Executive Summary
-Statum Legal is a professional, trilingual legal expert system designed for the Ugandan jurisdiction. It utilizes Retrieval-Augmented Generation (RAG) to provide statutory guidance in English, Luganda, and Runyankore. This report outlines the technical achievements and the "Zero-Budget" architecture implemented to ensure high fidelity and legal grounding.
+Statum Legal is a professional, trilingual legal expert system designed for the Ugandan jurisdiction. It utilizes Retrieval-Augmented Generation (RAG) to provide statutory guidance in English, Luganda, and Runyankore. This report outlines the technical achievements and the architecture implemented to ensure high fidelity and legal grounding.
 
 ## 2. Technical Architecture implemented
 
-### 🚨 Core Backbone: The "Zero-Budget" RAG
-To maintain a 0 UGX operational budget for the MVP, we implemented a custom server-side orchestration layer:
+### 🚨 Core Backbone: RAG Orchestration
+We implemented a custom server-side orchestration layer:
 
-*   **Logic Engine:** Express.js + Gemini 1.5 Pro/Flash (Free Tier)
+*   **Logic Engine:** Express.js + Gemini 1.5 Pro/Flash
 *   **Vector Simulation:** In-memory keyword-based retrieval with a migration path to Supabase (pgvector).
 *   **Grounding:** Custom citation verification service integrated into the frontend workflow.
 
@@ -52,10 +52,9 @@ Since external legal review costs are high, we developed a **Multi-Agent Verific
 
 ## 5. Deployment & Scalability Roadmap
 
-### Stage 1: Current (Vercel/Cloud Run + Free Gemini)
+### Stage 1: Current (Vercel/Cloud Run + Gemini API)
 - Single-server deployment.
 - In-memory caching for speed.
-- Zero infrastructure costs.
 
 ### Stage 2: Near Future (Supabase Data Layer)
 - Migrate file ingestion to Supabase Storage.
