@@ -4,11 +4,9 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { Type, FunctionDeclaration } from "@google/genai";
-
-// AI Initialization (REMOVED FROM FRONTEND FOR SECURITY)
-const flashModel = "gemini-3-flash-preview";
-
 import { generatePDF, generateDOCX } from './lib/documentService';
+
+const flashModel = "gemini-1.5-flash";
 import { 
   auth, 
   db, 
@@ -91,11 +89,15 @@ import {
   ArrowUpRight,
   CheckCircle,
   Camera,
-  Copy
+  Copy,
+  Upload,
+  Database,
+  Activity
 } from 'lucide-react';
 import { Message, ChatSession, Lawyer } from './types';
 import { MOCK_LAWYERS, SYSTEM_INSTRUCTION, LUGANDA_SYSTEM_INSTRUCTION, RUNYANKORE_SYSTEM_INSTRUCTION } from './constants/systemInstructions';
 import { findTemplate, LegalTemplate } from './constants/legalTemplates';
+import { verifyCitations, getVerificationSummary } from './lib/verification';
 
 const LegalNoticeModal = React.lazy(() => import('./components/LegalNoticeModal').then(m => ({ default: m.LegalNoticeModal })));
 const MarkdownRenderer = React.lazy(() => import('./components/MarkdownRenderer'));
@@ -145,19 +147,52 @@ const RoadmapComponent = ({ roadmap, language }: { roadmap: any, language: 'en' 
   </div>
 );
 
-const LegalIntelligenceBadge = () => (
-  <div className="flex items-center gap-2 mb-4 sm:mb-6 text-[9px] sm:text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em] border-b border-slate-100 pb-3">
-    <div className="flex items-center -space-x-1">
-      <ShieldCheck size={14} className="sm:w-4 sm:h-4 relative z-10" />
-      <Gavel size={14} className="sm:w-4 sm:h-4 text-slate-300" />
+const LegalIntelligenceBadge = ({ citations }: { citations?: any[] }) => {
+  const summary = citations ? getVerificationSummary(citations) : null;
+  
+  return (
+    <div className="flex flex-col gap-2 mb-4 sm:mb-6 border-b border-slate-100 pb-3">
+      <div className="flex items-center gap-2 text-[9px] sm:text-[10px] font-bold text-[#C5A059] uppercase tracking-[0.2em]">
+        <div className="flex items-center -space-x-1">
+          <ShieldCheck size={14} className="sm:w-4 sm:h-4 relative z-10" />
+          <Gavel size={14} className="sm:w-4 sm:h-4 text-slate-300" />
+        </div>
+        <span>Laws of Uganda (2023 Rev.)</span>
+        <div className="ml-auto flex items-center gap-1.5 font-mono text-[8px] opacity-70">
+          <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" />
+          <span>ULII Verified</span>
+        </div>
+      </div>
+      
+      {summary && summary.total > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {citations?.map((c, i) => (
+            <a 
+              key={i}
+              href={c.referenceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold border transition-all",
+                c.isValid 
+                 ? "bg-green-50 border-green-100 text-green-700 hover:bg-green-100" 
+                 : "bg-slate-50 border-slate-100 text-slate-400 opacity-50"
+              )}
+            >
+              {c.isValid ? <CheckCircle2 size={10} /> : <Info size={10} />}
+              {c.text}
+            </a>
+          ))}
+          {summary.isFullyVerified && (
+            <span className="text-[8px] font-bold text-green-600 ml-auto flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded">
+              <CheckCircle size={10} /> 100% Grounded
+            </span>
+          )}
+        </div>
+      )}
     </div>
-    <span>Laws of Uganda (2023 Rev.)</span>
-    <div className="ml-auto flex items-center gap-1.5 font-mono text-[8px] opacity-70">
-      <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" />
-      <span>ULII Verified</span>
-    </div>
-  </div>
-);
+  );
+};
 
 // --- Oracle Core (Native Intelligence) ---
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -404,6 +439,43 @@ export default function App() {
     return localStorage.getItem('uganda_law_oracle_legal_notice_accepted') !== 'true';
   });
   const [activeTab, setActiveTab] = useState<'chat' | 'lawyers' | 'documents' | 'services'>('chat');
+  const [ingestedDocs, setIngestedDocs] = useState<any[]>([]);
+  const [isIngesting, setIsIngesting] = useState(false);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsIngesting(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const content = e.target?.result as string;
+      try {
+        const res = await fetch('/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            content: content.substring(0, 50000), // Safety limit for MVP
+            type: 'Act'
+          })
+        });
+        const data = await res.json();
+        if (data.status === 'Success') {
+          setIngestedDocs(prev => [...prev, { 
+            name: file.name, 
+            id: data.documentId, 
+            date: new Date().toLocaleDateString() 
+          }]);
+        }
+      } catch (err) {
+        console.error("Ingestion error:", err);
+      } finally {
+        setIsIngesting(false);
+      }
+    };
+    reader.readAsText(file);
+  };
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isDocumentMode, setIsDocumentMode] = useState(false);
@@ -972,7 +1044,27 @@ If no speech is detected, return '[No speech detected]'.` }
             throw new Error(errData.error || 'Transcription Proxy Failed');
           }
 
-          transcriptionResponse = await apiResponse.json();
+          const reader = apiResponse.body?.getReader();
+          const decoder = new TextDecoder();
+          let transcribedTextResult = "";
+
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                  try {
+                    const { text } = JSON.parse(line.replace('data: ', ''));
+                    if (text) transcribedTextResult += text;
+                  } catch (e) {}
+                }
+              }
+            }
+          }
+          transcriptionResponse = { text: transcribedTextResult };
           break; // Success
         } catch (err: any) {
           console.warn(`Transcription attempt ${3 - retries} failed:`, err.message);
@@ -1043,12 +1135,31 @@ If no speech is detected, return '[No speech detected]'.` }
             throw new Error(errData.error || 'Gemini Proxy Failed');
           }
 
-          const resultStream = await apiResponse.json();
-          const { text } = resultStream;
+          const reader = apiResponse.body?.getReader();
+          const decoder = new TextDecoder();
+          let fullText = "";
 
-          let fullText = text || "";
-          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-          scrollToBottom();
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                  try {
+                    const { text } = JSON.parse(line.replace('data: ', ''));
+                    if (text) {
+                      fullText += text;
+                      setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                      const isNearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 100;
+                      if (isNearBottom) scrollToBottom();
+                    }
+                  } catch (e) {}
+                }
+              }
+            }
+          }
           
           updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
           setStreamingContent(prev => {
@@ -1089,8 +1200,26 @@ If no speech is detected, return '[No speech detected]'.` }
             throw new Error(errData.error || 'Gemini Proxy Failed');
           }
 
-          const result = await apiResponse.json();
-          const responseText = result.text || "";
+          const reader = apiResponse.body?.getReader();
+          const decoder = new TextDecoder();
+          let responseText = "";
+
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                  try {
+                    const { text } = JSON.parse(line.replace('data: ', ''));
+                    if (text) responseText += text;
+                  } catch (e) {}
+                }
+              }
+            }
+          }
           
           updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: responseText } : m));
           
@@ -1568,13 +1697,16 @@ If no speech is detected, return '[No speech detected]'.` }
       let retryCount = 0;
       const maxRetries = 4; 
       let success = false;
-      let modelToUse = "gemini-3.1-pro-preview"; // Default to Expert Reasoning
+      let modelToUse = "gemini-1.5-pro"; // Default to Expert Reasoning
       
       // Heuristic Check: Is user asking for a document? (Preparation for fallback)
       const locallyMatchedTemplate = findTemplate(messageText, language);
 
       while (retryCount <= maxRetries && !success) {
         try {
+          if (retryCount === 1) {
+            modelToUse = "gemini-1.5-flash"; // Try flash as secondary
+          }
           // FINAL FALLBACK: GROQ (RETRY 4)
           if (retryCount === 4) {
             const groqResponse = await fetch('/api/groq', {
@@ -1678,39 +1810,54 @@ If no speech is detected, return '[No speech detected]'.` }
             throw new Error(errData.error || 'Gemini Proxy Failed');
           }
 
-          const resultStream = await apiResponse.json();
-          const { text, functionCalls } = resultStream;
-
           // Once we get data, clear the visual verification overlay
           if (verificationSteps.length > 0) {
             setVerificationSteps([]);
           }
 
+          const reader = apiResponse.body?.getReader();
+          const decoder = new TextDecoder();
           let fullText = "";
-          
-          // Handle Tool Calls returned from Proxy
-          if (functionCalls && functionCalls.length > 0) {
-            for (const call of functionCalls) {
-              if (call.name === "generateLegalDocument") {
-                const { content, format, title } = call.args as any;
-                const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
-                const successMsg = language === 'en' 
-                  ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
-                  : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
-                fullText += successMsg;
-                setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-              } else if (call.name === "generateLegalRoadmap") {
-                const roadmapData = call.args as any;
-                updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                  try {
+                    const { text, functionCalls } = JSON.parse(line.replace('data: ', ''));
+
+                    // Handle Tool Calls
+                    if (functionCalls && functionCalls.length > 0) {
+                      for (const call of functionCalls) {
+                        if (call.name === "generateLegalDocument") {
+                          const { content, format, title } = call.args as any;
+                          const url = format === 'pdf' ? await generatePDF(content, title) : await generateDOCX(content, title);
+                          const successMsg = language === 'en' 
+                            ? `\n\n✅ **Legal Document Generated: ${title}**\n\n[Download ${format.toUpperCase()}](${url})`
+                            : `\n\n✅ **Ekiwandiiko kikoleddwa: ${title}**\n\n[Tikula ${format.toUpperCase()}](${url})`;
+                          fullText += successMsg;
+                          setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                        } else if (call.name === "generateLegalRoadmap") {
+                          const roadmapData = call.args as any;
+                          updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, roadmap: roadmapData } : m));
+                        }
+                      }
+                    }
+
+                    if (text) {
+                      fullText += text;
+                      setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
+                      const isNearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 100;
+                      if (isNearBottom) scrollToBottom();
+                    }
+                  } catch (e) {}
+                }
               }
             }
-          }
-
-          // Handle Text Result
-          if (text) {
-            fullText += text;
-            setStreamingContent(prev => ({ ...prev, [assistantMessageId]: fullText }));
-            scrollToBottom();
           }
           
           updateSessionMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullText } : m));
@@ -1741,16 +1888,16 @@ If no speech is detected, return '[No speech detected]'.` }
             retryCount++;
             
             if (retryCount === 1) {
-              // Try Pro again with slight delay
-              modelToUse = "gemini-3.1-pro-preview"; 
+              // Try Flash instead of Pro
+              modelToUse = "gemini-1.5-flash"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 2) {
-              // Try standard 3.1 Flash
-              modelToUse = "gemini-3.1-flash-preview"; 
+              // Try Pro again with higher temperature
+              modelToUse = "gemini-1.5-pro"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 3) {
-              // Try 3.0 Flash
-              modelToUse = "gemini-3-flash-preview"; 
+              // Try Flash one last time
+              modelToUse = "gemini-1.5-flash"; 
               await new Promise(r => setTimeout(r, 1000));
             } else if (retryCount === 4) {
               // Final fallback to Groq handled at top of loop
@@ -2076,6 +2223,15 @@ If no speech is detected, return '[No speech detected]'.` }
               >
                 {language === 'en' ? 'Find Advocate' : language === 'lg' ? 'Noonya Puliida' : 'Sherura Puliida'}
               </button>
+              <button 
+                onClick={() => setActiveTab('documents')}
+                className={cn(
+                  "px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-sm font-bold transition-all whitespace-nowrap",
+                  activeTab === 'documents' ? "bg-[#C5A059]/10 text-[#8B6E37]" : "text-slate-500 hover:bg-slate-50"
+                )}
+              >
+                {language === 'en' ? 'Legal Vault' : 'Eggwanika'}
+              </button>
             </div>
           </div>
 
@@ -2214,7 +2370,7 @@ If no speech is detected, return '[No speech detected]'.` }
                         )}>
                           {m.role === 'assistant' && (
                             <div className="flex flex-col gap-1 mb-4">
-                              <LegalIntelligenceBadge />
+                              <LegalIntelligenceBadge citations={verifyCitations(streamingContent[m.id] || m.content)} />
                               <div className="flex items-center gap-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest pl-1">
                                 <FileText size={10} />
                                 <span>Ref: SLG-{m.id.substring(0, 8)}</span>
@@ -2339,6 +2495,55 @@ If no speech is detected, return '[No speech detected]'.` }
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            ) : activeTab === 'documents' ? (
+              <div className="py-12 space-y-12 h-full overflow-y-auto custom-scrollbar">
+                <div className="text-center space-y-4">
+                  <h2 className="text-2xl sm:text-4xl font-display font-bold text-[#0B0F1A] tracking-tight">Legal Knowledge Vault</h2>
+                  <p className="text-slate-500 text-sm sm:text-lg max-w-xl mx-auto">Proprietary documents indexed and verified for retrieval-augmented generation.</p>
+                </div>
+                
+                <div className="bg-slate-50 rounded-[2rem] border border-slate-100 p-8 sm:p-12 text-center">
+                   <div className="w-20 h-20 bg-white shadow-sm rounded-3xl flex items-center justify-center mx-auto mb-6 text-[#C5A059]">
+                     <Database size={40} />
+                   </div>
+                   <h3 className="text-xl font-bold text-[#0B0F1A] mb-2">Zero-Budget Vector Storage</h3>
+                   <p className="text-slate-500 mb-8 max-w-md mx-auto text-sm text-balance">Upload Acts, Regulations, or private contracts. Our RAG engine chunks and indexes them using free-tier Gemini embeddings.</p>
+                   
+                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                      <button 
+                        onClick={() => document.getElementById('main-file-upload')?.click()}
+                        disabled={isIngesting}
+                        className="flex items-center justify-center gap-3 px-8 py-4 bg-[#0B0F1A] text-white rounded-full font-bold hover:bg-[#C5A059] transition-all"
+                      >
+                         {isIngesting ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                         {isIngesting ? "Indexing..." : "Upload Legal Document"}
+                      </button>
+                      <input id="main-file-upload" type="file" className="hidden" onChange={handleFileUpload} accept=".txt,.md" />
+                      
+                      <button className="flex items-center justify-center gap-3 px-8 py-4 bg-white border border-slate-200 text-slate-700 rounded-full font-bold hover:bg-slate-50 transition-all">
+                         <Search size={18} />
+                         Browse Public Archive
+                      </button>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   {ingestedDocs.map((doc, idx) => (
+                     <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
+                        <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-[#C5A059]">
+                           <FileText size={24} />
+                        </div>
+                        <div className="flex-1 overflow-hidden text-left">
+                           <p className="font-bold text-slate-800 truncate text-sm">{doc.name}</p>
+                           <p className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">Status: Verified • {doc.date}</p>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                           <div className="w-2 h-2 bg-green-500 rounded-full" />
+                        </div>
+                     </div>
+                   ))}
                 </div>
               </div>
             ) : null}
